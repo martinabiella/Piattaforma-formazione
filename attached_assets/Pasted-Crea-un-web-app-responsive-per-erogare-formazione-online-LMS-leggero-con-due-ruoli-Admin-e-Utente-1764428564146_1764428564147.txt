@@ -1,0 +1,58 @@
+Crea un web app responsive per erogare formazione online (LMS leggero) con due ruoli: Admin e Utente.
+Obiettivo
+L’utente deve poter accedere, fruire di 3 moduli formativi (testo + immagini), e al termine di ciascun modulo completare un breve questionario (quiz) per verificare l’apprendimento.
+L’admin deve poter creare e aggiornare contenuti e quiz da una dashboard.
+Ruoli e accessi
+Autenticazione con login/logout.
+Ruoli:
+Admin: può creare/modificare/pubblicare moduli, caricare immagini, creare/modificare quiz e vedere i risultati degli utenti.
+Utente: può vedere i moduli pubblicati, completare i quiz, e vedere i propri risultati/progressi.
+Proteggi le route: pagine admin visibili solo ad admin.
+Struttura contenuti (3 moduli)
+Home pubblica (marketing semplice): descrizione della piattaforma + pulsante “Accedi”.
+Area utente:
+Dashboard con elenco dei 3 moduli (stato: non iniziato / in corso / completato).
+Pagina Modulo: titolo, breve descrizione, sezioni con contenuto testuale formattato (rich text) e immagini.
+CTA a fine modulo: “Avvia quiz del modulo”.
+Area admin:
+Dashboard admin con:
+gestione moduli (CRUD: crea, modifica, elimina, pubblica/non pubblica; ordinamento 1-3)
+gestione contenuti del modulo (sezioni: titolo sezione, testo rich, immagine opzionale)
+gestione quiz per modulo (domande a scelta multipla)
+vista risultati (per modulo e per utente)
+Quiz (alla fine di ogni modulo)
+Ogni modulo ha un quiz con:
+5–10 domande a scelta multipla (4 opzioni, 1 corretta)
+punteggio finale (% corrette)
+soglia di superamento configurabile (default 70%)
+UX quiz:
+una domanda per pagina o tutte in pagina (scegli la più semplice)
+feedback finale: “Superato/Non superato”, punteggio, e riepilogo risposte corrette.
+Persistenza:
+salva tentativi, punteggio, data/ora
+mostra all’utente l’ultimo punteggio e lo stato del modulo (completato se superato).
+Dati e database (progetta tabelle/collezioni)
+Users (ruolo: admin/user)
+Modules (titolo, descrizione, ordine, published)
+ModuleSections (moduleId, titolo, contenutoRichText, imageUrl, ordine)
+Quizzes (moduleId, passingScore)
+QuizQuestions (quizId, domanda, opzioni[ ], correctOptionIndex, ordine)
+QuizAttempts (userId, moduleId/quizId, score, passed, answers, createdAt)
+Requisiti non funzionali
+Design pulito e moderno, mobile-first.
+Navigazione chiara (breadcrumb o “Torna ai moduli”).
+Gestione upload immagini (salva URL e mostra preview).
+Messaggi di errore e stati vuoti (es. “Nessun modulo pubblicato”).
+Seed iniziale: crea 3 moduli vuoti “Modulo 1/2/3” e quiz vuoti.
+Pagine richieste
+/ (landing)
+/login
+/app (dashboard utente)
+/app/modules/:id (contenuto modulo)
+/app/modules/:id/quiz
+/admin (dashboard)
+/admin/modules
+/admin/modules/:id/edit
+/admin/modules/:id/quiz/edit
+/admin/results
+Costruisci tutto end-to-end (UI + logica + database) così che io possa subito inserire contenuti e testare il flusso come utente.
