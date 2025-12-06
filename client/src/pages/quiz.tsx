@@ -27,13 +27,16 @@ import {
   Trophy,
   RotateCcw 
 } from "lucide-react";
-import type { ModuleWithProgress, QuizQuestion } from "@shared/schema";
+import type { ModuleWithProgress, QuizQuestion, InlineAnswer } from "@shared/schema";
 import { cn } from "@/lib/utils";
 
 interface QuizResult {
   score: number;
+  quizScore?: number;
+  inlineScore?: number;
   passed: boolean;
   answers: number[];
+  inlineAnswers?: InlineAnswer[];
   passingScore: number;
 }
 
@@ -172,6 +175,7 @@ function ResultsCard({
   moduleName: string;
 }) {
   const [, setLocation] = useLocation();
+  const hasInlineScore = result.inlineScore !== undefined && result.inlineScore !== null;
 
   return (
     <div className="space-y-6">
@@ -213,6 +217,16 @@ function ResultsCard({
               {result.score}%
             </span>
           </div>
+
+          {hasInlineScore && (
+            <div className="mt-4 text-sm text-muted-foreground space-y-1" data-testid="score-breakdown">
+              <p>Score Breakdown:</p>
+              <div className="flex justify-center gap-4">
+                <span>Inline Questions: {result.inlineScore}%</span>
+                <span>Final Quiz: {result.quizScore}%</span>
+              </div>
+            </div>
+          )}
         </CardContent>
         
         <CardFooter className="flex flex-col sm:flex-row justify-center gap-4 pb-6">
@@ -298,12 +312,19 @@ export default function Quiz() {
   const [answers, setAnswers] = useState<(number | null)[]>([]);
   const [result, setResult] = useState<QuizResult | null>(null);
 
+  // Parse inline answers from URL query string
+  const urlParams = new URLSearchParams(window.location.search);
+  const inlineAnswersParam = urlParams.get("inlineAnswers");
+  const inlineAnswers: InlineAnswer[] = inlineAnswersParam 
+    ? JSON.parse(decodeURIComponent(inlineAnswersParam)) 
+    : [];
+
   const { data: module, isLoading, error } = useQuery<ModuleWithProgress>({
     queryKey: ["/api/modules", id],
   });
 
   const submitMutation = useMutation({
-    mutationFn: async (data: { moduleId: number; quizId: number; answers: number[] }) => {
+    mutationFn: async (data: { moduleId: number; quizId: number; answers: number[]; inlineAnswers?: InlineAnswer[] }) => {
       return await apiRequest<QuizResult>("POST", "/api/quiz-attempts", data);
     },
     onSuccess: (data) => {
@@ -379,6 +400,7 @@ export default function Quiz() {
       moduleId: module.id,
       quizId: module.quiz.id,
       answers: answers as number[],
+      inlineAnswers: inlineAnswers.length > 0 ? inlineAnswers : undefined,
     });
   };
 
