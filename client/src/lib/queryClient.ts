@@ -20,6 +20,12 @@ export async function apiRequest<T = unknown>(
   });
 
   await throwIfResNotOk(res);
+  
+  // Handle 204 No Content responses (e.g., DELETE requests)
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  
   return await res.json() as T;
 }
 

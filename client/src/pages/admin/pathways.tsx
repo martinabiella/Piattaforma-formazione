@@ -79,7 +79,7 @@ function CreatePathwayDialog({ onSuccess }: { onSuccess: () => void }) {
   const { toast } = useToast();
 
   const { data: modules } = useQuery<Module[]>({
-    queryKey: ["/api/modules"],
+    queryKey: ["/api/admin/modules"],
     enabled: open,
   });
 
@@ -512,6 +512,7 @@ export default function AdminPathways() {
                         <AlertDialogAction
                           onClick={() => deleteMutation.mutate(pathway.id)}
                           className="bg-destructive hover:bg-destructive/90"
+                          data-testid={`button-confirm-delete-pathway-${pathway.id}`}
                         >
                           Delete
                         </AlertDialogAction>

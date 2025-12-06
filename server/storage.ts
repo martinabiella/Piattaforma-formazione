@@ -156,17 +156,34 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          ...userData,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
+    // First check if user exists by ID
+    const existingById = await this.getUser(userData.id);
+    if (existingById) {
+      // Update existing user
+      const [user] = await db
+        .update(users)
+        .set({ ...userData, updatedAt: new Date() })
+        .where(eq(users.id, userData.id))
+        .returning();
+      return user;
+    }
+    
+    // Check if user exists by email (for unique constraint)
+    if (userData.email) {
+      const [existingByEmail] = await db.select().from(users).where(eq(users.email, userData.email));
+      if (existingByEmail) {
+        // Update existing user with new ID (user logged in with different provider)
+        const [user] = await db
+          .update(users)
+          .set({ ...userData, id: existingByEmail.id, updatedAt: new Date() })
+          .where(eq(users.id, existingByEmail.id))
+          .returning();
+        return user;
+      }
+    }
+    
+    // Create new user
+    const [user] = await db.insert(users).values(userData).returning();
     return user;
   }
 
@@ -623,6 +640,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deletePathway(id: number): Promise<void> {
+    // Delete related records first to avoid foreign key constraint errors
+    await db.delete(pathwayModules).where(eq(pathwayModules.pathwayId, id));
+    await db.delete(userPathwayAssignments).where(eq(userPathwayAssignments.pathwayId, id));
+    await db.delete(groupPathwayAssignments).where(eq(groupPathwayAssignments.pathwayId, id));
+    // Now delete the pathway
     await db.delete(trainingPathways).where(eq(trainingPathways.id, id));
   }
 
@@ -720,11 +742,34 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getModulesWithProgress(userId: string): Promise<ModuleWithProgress[]> {
-    const mods = await this.getPublishedModules();
+    // Get user's assigned pathways (direct and via groups)
+    const assignedPathways = await this.getUserAssignedPathways(userId);
+    
+    // If user has no pathway assignments, return empty array
+    // (users only see modules from assigned pathways)
+    if (assignedPathways.length === 0) {
+      return [];
+    }
+    
+    // Collect unique module IDs from all assigned pathways
+    const assignedModuleIds = new Set<number>();
+    for (const pathway of assignedPathways) {
+      if (pathway.modules) {
+        for (const pm of pathway.modules) {
+          if (pm.module?.published) {
+            assignedModuleIds.add(pm.moduleId);
+          }
+        }
+      }
+    }
+    
+    // Get modules with progress for assigned modules only
     const result: ModuleWithProgress[] = [];
-
-    for (const mod of mods) {
-      const lastAttempt = await this.getLastAttempt(userId, mod.id);
+    for (const moduleId of Array.from(assignedModuleIds)) {
+      const mod = await this.getModule(moduleId);
+      if (!mod || !mod.published) continue;
+      
+      const lastAttempt = await this.getLastAttempt(userId, moduleId);
       
       let status: 'not_started' | 'in_progress' | 'completed' = 'not_started';
       if (lastAttempt?.passed) {
@@ -740,6 +785,8 @@ export class DatabaseStorage implements IStorage {
       });
     }
 
+    // Sort by module order
+    result.sort((a, b) => a.order - b.order);
     return result;
   }
 
@@ -756,10 +803,10 @@ export class DatabaseStorage implements IStorage {
     }
     
     // Combine unique pathway IDs
-    const allPathwayIds = new Set([
+    const allPathwayIds = Array.from(new Set([
       ...directAssignments.map(a => a.pathwayId),
       ...groupPathwayIds,
-    ]);
+    ]));
     
     // Get full pathway details
     const result: TrainingPathwayWithModules[] = [];
