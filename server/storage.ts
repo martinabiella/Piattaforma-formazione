@@ -745,27 +745,31 @@ export class DatabaseStorage implements IStorage {
     // Get user's assigned pathways (direct and via groups)
     const assignedPathways = await this.getUserAssignedPathways(userId);
     
-    // If user has no pathway assignments, return empty array
-    // (users only see modules from assigned pathways)
-    if (assignedPathways.length === 0) {
-      return [];
-    }
+    // Collect module IDs to show
+    let moduleIdsToShow: number[] = [];
     
-    // Collect unique module IDs from all assigned pathways
-    const assignedModuleIds = new Set<number>();
-    for (const pathway of assignedPathways) {
-      if (pathway.modules) {
-        for (const pm of pathway.modules) {
-          if (pm.module?.published) {
-            assignedModuleIds.add(pm.moduleId);
+    if (assignedPathways.length > 0) {
+      // User has pathway assignments - show only modules from assigned pathways
+      const assignedModuleIds = new Set<number>();
+      for (const pathway of assignedPathways) {
+        if (pathway.modules) {
+          for (const pm of pathway.modules) {
+            if (pm.module?.published) {
+              assignedModuleIds.add(pm.moduleId);
+            }
           }
         }
       }
+      moduleIdsToShow = Array.from(assignedModuleIds);
+    } else {
+      // No pathway assignments - show ALL published modules (fallback for new users)
+      const allModules = await db.select().from(modules).where(eq(modules.published, true));
+      moduleIdsToShow = allModules.map(m => m.id);
     }
     
-    // Get modules with progress for assigned modules only
+    // Get modules with progress
     const result: ModuleWithProgress[] = [];
-    for (const moduleId of Array.from(assignedModuleIds)) {
+    for (const moduleId of moduleIdsToShow) {
       const mod = await this.getModule(moduleId);
       if (!mod || !mod.published) continue;
       
