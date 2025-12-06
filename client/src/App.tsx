@@ -17,6 +17,9 @@ import AdminModules from "@/pages/admin/modules";
 import ModuleEditor from "@/pages/admin/module-editor";
 import QuizEditor from "@/pages/admin/quiz-editor";
 import AdminResults from "@/pages/admin/results";
+import AdminUsers from "@/pages/admin/users";
+import AdminGroups from "@/pages/admin/groups";
+import AdminPathways from "@/pages/admin/pathways";
 import NotFound from "@/pages/not-found";
 
 function ProtectedRoute({ 
@@ -127,6 +130,24 @@ function Router() {
       <Route path="/admin/results">
         <ProtectedRoute requireAdmin>
           <AdminResults />
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/users">
+        <ProtectedRoute requireAdmin>
+          <AdminUsers />
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/groups">
+        <ProtectedRoute requireAdmin>
+          <AdminGroups />
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/pathways">
+        <ProtectedRoute requireAdmin>
+          <AdminPathways />
         </ProtectedRoute>
       </Route>
       

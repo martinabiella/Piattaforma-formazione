@@ -1,10 +1,23 @@
 # Overview
 
-LearnHub is a lightweight Learning Management System (LMS) web application designed for online training delivery. The platform enables users to access and complete training modules with integrated assessments, while administrators can create and manage educational content. Built as a full-stack TypeScript application, it features a React frontend with shadcn/ui components and an Express backend with PostgreSQL database.
+LearnHub is a comprehensive Learning Management System (LMS) web application designed for online training delivery. The platform enables users to access and complete training modules with integrated assessments, while administrators can create and manage educational content. Built as a full-stack TypeScript application, it features a React frontend with shadcn/ui components and an Express backend with PostgreSQL database.
+
+## Key Features
+
+**Enhanced Learning Experience:**
+- **Block-based module content**: Modules use alternating text blocks and inline questions for progressive learning
+- **Inline questions**: Users answer questions while learning, contributing to their final score
+- **Combined scoring**: Final module score combines inline question performance with end-of-module quiz results
+
+**User & Group Management:**
+- **User management**: Admins can view user progress, update roles, and see quiz attempt history
+- **Group management**: Create groups to organize users, add/remove members easily
+- **Training pathways**: Bundle multiple modules into structured learning experiences
+- **Pathway assignments**: Assign pathways to groups or individual users
 
 The application serves two primary user roles:
-- **Users**: Access published training modules, complete quizzes, and track learning progress
-- **Admins**: Create/edit modules, manage content sections, configure quizzes, and view user results
+- **Users**: Access published training modules, answer inline questions, complete quizzes, and track learning progress
+- **Admins**: Create/edit modules with content blocks, manage users/groups, build training pathways, and view results
 
 # User Preferences
 
@@ -79,25 +92,47 @@ Preferred communication style: Simple, everyday language.
    - Contains title, description, order, published status
    - Optional image URL for visual representation
 
-3. **moduleSections** - Content sections within modules
+3. **moduleSections** - Content sections within modules (legacy)
    - Rich text content via HTML
    - Optional images per section
    - Ordered sections for structured learning flow
 
-4. **quizzes** - Assessment configuration per module
+4. **contentBlocks** - Block-based module content
+   - Supports text blocks and question blocks
+   - blockType: 'text' or 'question' to differentiate content
+   - Questions include options, correctOptionIndex, explanation
+
+5. **quizzes** - Assessment configuration per module
    - Configurable passing score threshold (default 70%)
    - One quiz per module relationship
 
-5. **quizQuestions** - Multiple choice questions
+6. **quizQuestions** - Multiple choice questions
    - 4 options per question with single correct answer
    - Ordered presentation
 
-6. **quizAttempts** - User quiz submission records
+7. **quizAttempts** - User quiz submission records
    - Stores score, pass/fail status, user answers
+   - Includes inlineAnswers for block-based question tracking
    - Timestamp for tracking completion
 
-7. **sessions** - Express session storage
-   - Manages authenticated user sessions
+8. **userGroups** - Groups for organizing users
+   - Contains name and description
+
+9. **groupMembers** - Membership associations
+   - Links users to groups with join timestamp
+
+10. **trainingPathways** - Bundled learning experiences
+    - Contains name and description
+    - Groups modules into structured pathways
+
+11. **pathwayModules** - Modules within pathways
+    - Links modules to pathways with orderIndex
+
+12. **pathwayAssignments** - Pathway assignments
+    - Assigns pathways to groups or individual users
+
+13. **sessions** - Express session storage
+    - Manages authenticated user sessions
 
 **Database Migrations**: Managed via Drizzle Kit with migration files in `/migrations`
 

@@ -11,7 +11,7 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { LayoutDashboard, BookOpen, ClipboardList, GraduationCap, ArrowLeft } from "lucide-react";
+import { LayoutDashboard, BookOpen, ClipboardList, GraduationCap, ArrowLeft, Users, UsersRound, Route } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const menuItems = [
@@ -24,6 +24,21 @@ const menuItems = [
     title: "Modules",
     url: "/admin/modules",
     icon: BookOpen,
+  },
+  {
+    title: "Users",
+    url: "/admin/users",
+    icon: Users,
+  },
+  {
+    title: "Groups",
+    url: "/admin/groups",
+    icon: UsersRound,
+  },
+  {
+    title: "Pathways",
+    url: "/admin/pathways",
+    icon: Route,
   },
   {
     title: "Results",
