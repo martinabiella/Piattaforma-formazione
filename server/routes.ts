@@ -716,7 +716,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const pathway = await storage.createPathway(result.data);
-      res.status(201).json(pathway);
+      
+      // Add modules to the pathway if moduleIds are provided
+      const { moduleIds } = req.body;
+      if (Array.isArray(moduleIds) && moduleIds.length > 0) {
+        for (let i = 0; i < moduleIds.length; i++) {
+          await storage.addPathwayModule({
+            pathwayId: pathway.id,
+            moduleId: moduleIds[i],
+            order: i + 1,
+          });
+        }
+      }
+      
+      // Return the pathway with modules
+      const pathwayWithModules = await storage.getPathwayWithModules(pathway.id);
+      res.status(201).json(pathwayWithModules);
     } catch (error) {
       console.error("Error creating pathway:", error);
       res.status(500).json({ message: "Failed to create pathway" });
