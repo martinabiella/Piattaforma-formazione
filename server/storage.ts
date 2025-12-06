@@ -745,31 +745,27 @@ export class DatabaseStorage implements IStorage {
     // Get user's assigned pathways (direct and via groups)
     const assignedPathways = await this.getUserAssignedPathways(userId);
     
-    // Collect module IDs to show
-    let moduleIdsToShow: number[] = [];
+    // Users only see modules from assigned pathways
+    // No assignments = no modules visible
+    if (assignedPathways.length === 0) {
+      return [];
+    }
     
-    if (assignedPathways.length > 0) {
-      // User has pathway assignments - show only modules from assigned pathways
-      const assignedModuleIds = new Set<number>();
-      for (const pathway of assignedPathways) {
-        if (pathway.modules) {
-          for (const pm of pathway.modules) {
-            if (pm.module?.published) {
-              assignedModuleIds.add(pm.moduleId);
-            }
+    // Collect unique module IDs from all assigned pathways
+    const assignedModuleIds = new Set<number>();
+    for (const pathway of assignedPathways) {
+      if (pathway.modules) {
+        for (const pm of pathway.modules) {
+          if (pm.module?.published) {
+            assignedModuleIds.add(pm.moduleId);
           }
         }
       }
-      moduleIdsToShow = Array.from(assignedModuleIds);
-    } else {
-      // No pathway assignments - show ALL published modules (fallback for new users)
-      const allModules = await db.select().from(modules).where(eq(modules.published, true));
-      moduleIdsToShow = allModules.map(m => m.id);
     }
     
-    // Get modules with progress
+    // Get modules with progress for assigned modules only
     const result: ModuleWithProgress[] = [];
-    for (const moduleId of moduleIdsToShow) {
+    for (const moduleId of Array.from(assignedModuleIds)) {
       const mod = await this.getModule(moduleId);
       if (!mod || !mod.published) continue;
       
@@ -812,11 +808,11 @@ export class DatabaseStorage implements IStorage {
       ...groupPathwayIds,
     ]));
     
-    // Get full pathway details
+    // Get full pathway details (no published filter - assigned pathways are always visible)
     const result: TrainingPathwayWithModules[] = [];
     for (const pathwayId of allPathwayIds) {
       const pathway = await this.getPathwayWithModules(pathwayId);
-      if (pathway && pathway.published) {
+      if (pathway) {
         result.push(pathway);
       }
     }
