@@ -16,6 +16,7 @@ import Quiz from "@/pages/quiz";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminModules from "@/pages/admin/modules";
 import ModuleEditor from "@/pages/admin/module-editor";
+import StepEditor from "@/pages/admin/step-editor";
 import QuizEditor from "@/pages/admin/quiz-editor";
 import AdminResults from "@/pages/admin/results";
 import AdminUsers from "@/pages/admin/users";
@@ -125,6 +126,12 @@ function Router() {
       <Route path="/admin/modules/:id/edit">
         <ProtectedRoute requireAdmin>
           <ModuleEditor />
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/admin/modules/:id/steps/edit">
+        <ProtectedRoute requireAdmin>
+          <StepEditor />
         </ProtectedRoute>
       </Route>
       

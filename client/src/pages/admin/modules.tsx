@@ -32,7 +32,8 @@ import {
   Trash2, 
   BookOpen,
   ClipboardCheck,
-  GripVertical
+  GripVertical,
+  ListOrdered
 } from "lucide-react";
 import type { Module } from "@shared/schema";
 
@@ -241,6 +242,17 @@ export default function AdminModules() {
                       >
                         <Link href={`/admin/modules/${module.id}/edit`}>
                           <Pencil className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        asChild
+                        data-testid={`button-steps-${module.id}`}
+                        title="Edit Learning Steps"
+                      >
+                        <Link href={`/admin/modules/${module.id}/steps/edit`}>
+                          <ListOrdered className="h-4 w-4" />
                         </Link>
                       </Button>
                       <Button 
