@@ -396,14 +396,32 @@ export default function AdminStepEditor() {
 
   const saveSteps = useMutation({
     mutationFn: async (stepsToSave: StepFormData[]) => {
-      const res = await apiRequest("PUT", `/api/admin/modules/${id}/steps`, { steps: stepsToSave }) as Response;
-      if (!res.ok) throw new Error("Failed to save steps");
-      return res.json();
+      return await apiRequest<StepWithDetails[]>("PUT", `/api/admin/modules/${id}/steps`, { steps: stepsToSave });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/modules", id, "steps"] });
-      toast({ title: "Success", description: "Steps saved successfully" });
+    onSuccess: (data) => {
+      // Use the returned data to sync local state immediately
+      if (data && Array.isArray(data)) {
+        setSteps(data.map(s => ({
+          id: s.id,
+          title: s.title,
+          contentBlocks: (s.contentBlocks || []).map(b => ({
+            id: b.id,
+            blockType: b.blockType,
+            content: b.content || "",
+            imageUrl: b.imageUrl || "",
+          })),
+          checkpoint: s.checkpoint ? {
+            question: s.checkpoint.question,
+            options: s.checkpoint.options || ["", "", "", ""],
+            correctOptionIndex: s.checkpoint.correctOptionIndex,
+            explanation: s.checkpoint.explanation || "",
+          } : null,
+        })));
+      }
       setHasChanges(false);
+      toast({ title: "Success", description: "Steps saved successfully" });
+      // Invalidate to ensure cache is fresh for other consumers
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/modules", id, "steps"] });
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
