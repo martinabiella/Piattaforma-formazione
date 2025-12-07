@@ -44,7 +44,10 @@ import {
   FileText,
   Image,
   Eye,
+  Pencil,
+  CheckCircle2,
 } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { Module, ModuleStep, StepContentBlock, StepCheckpoint } from "@shared/schema";
 
@@ -287,6 +290,118 @@ function CheckpointEditor({
             data-testid={`input-checkpoint-explanation-${stepIndex}`}
           />
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Preview components that match user-facing styling
+function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
+  return (
+    <div data-testid="content-block-preview">
+      {block.imageUrl && (
+        <div className="mb-4 rounded-lg overflow-hidden">
+          <img 
+            src={block.imageUrl} 
+            alt="Step content"
+            className="w-full h-auto max-h-80 object-cover"
+          />
+        </div>
+      )}
+      {block.content && (
+        <div 
+          className="prose prose-lg dark:prose-invert max-w-none"
+          dangerouslySetInnerHTML={{ __html: block.content }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CheckpointPreview({ checkpoint, stepIndex }: { checkpoint: CheckpointFormData; stepIndex: number }) {
+  const options = checkpoint.options || [];
+  
+  return (
+    <Card className="border-2" data-testid={`checkpoint-preview-${stepIndex}`}>
+      <CardHeader className="pb-4">
+        <div className="flex items-center gap-2">
+          <HelpCircle className="h-5 w-5 text-primary" />
+          <CardTitle className="text-lg">Checkpoint Question</CardTitle>
+          <Badge variant="outline" className="ml-auto">Required to continue</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="font-medium text-lg" data-testid={`text-checkpoint-question-preview-${stepIndex}`}>
+          {checkpoint.question || "No question set"}
+        </p>
+        
+        <div className="space-y-2">
+          {options.map((option, index) => {
+            const isCorrect = index === checkpoint.correctOptionIndex;
+            
+            return (
+              <button
+                key={index}
+                type="button"
+                disabled
+                className="w-full p-4 rounded-lg border text-left transition-all flex items-center gap-3 cursor-pointer hover-elevate"
+                data-testid={`option-preview-${stepIndex}-${index}`}
+              >
+                <span className="w-6 h-6 rounded-full border-2 flex items-center justify-center text-sm font-medium shrink-0">
+                  {String.fromCharCode(65 + index)}
+                </span>
+                <span className="flex-1">{option || `Option ${String.fromCharCode(65 + index)}`}</span>
+                {isCorrect && (
+                  <Badge variant="secondary" className="text-xs">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Correct
+                  </Badge>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <Button disabled className="w-full" data-testid={`button-submit-preview-${stepIndex}`}>
+          Submit Answer
+        </Button>
+
+        {checkpoint.explanation && (
+          <div className="mt-4 p-4 rounded-lg bg-muted/50 border">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Explanation (shown after answering):</p>
+            <p className="text-sm" data-testid={`text-explanation-preview-${stepIndex}`}>{checkpoint.explanation}</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function StepPreview({ step, index }: { step: StepFormData; index: number }) {
+  return (
+    <Card data-testid={`step-preview-${index}`}>
+      <CardHeader>
+        <div className="flex items-center gap-3 flex-wrap">
+          <Badge variant="secondary">Step {index + 1}</Badge>
+        </div>
+        <CardTitle className="text-2xl mt-2" data-testid={`text-step-title-preview-${index}`}>
+          {step.title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {step.contentBlocks.length === 0 && !step.checkpoint && (
+          <p className="text-muted-foreground italic">No content added to this step yet.</p>
+        )}
+        
+        {step.contentBlocks.map((block, blockIndex) => (
+          <ContentBlockPreview key={block.tempId || blockIndex} block={block} />
+        ))}
+
+        {step.checkpoint && (
+          <div className="mt-8 pt-6 border-t">
+            <CheckpointPreview checkpoint={step.checkpoint} stepIndex={index} />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -545,6 +660,7 @@ export default function ModuleBuilder() {
   const [steps, setSteps] = useState<StepFormData[]>([]);
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set([0]));
   const [hasChanges, setHasChanges] = useState(false);
+  const [viewMode, setViewMode] = useState<"edit" | "preview">("edit");
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -765,14 +881,20 @@ export default function ModuleBuilder() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {!isNew && (
-              <Button variant="outline" asChild>
-                <Link href={`/app/modules/${id}/learn`} data-testid="button-preview">
-                  <Eye className="h-4 w-4 mr-2" />
-                  Preview
-                </Link>
-              </Button>
+          <div className="flex items-center gap-3">
+            {!isNew && steps.length > 0 && (
+              <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "edit" | "preview")}>
+                <TabsList>
+                  <TabsTrigger value="edit" data-testid="tab-edit">
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Edit
+                  </TabsTrigger>
+                  <TabsTrigger value="preview" data-testid="tab-preview">
+                    <Eye className="h-4 w-4 mr-2" />
+                    Preview
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
             )}
             <Button
               onClick={handleSaveAll}
@@ -850,11 +972,15 @@ export default function ModuleBuilder() {
         {!isNew && (
           <>
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Learning Steps</h2>
-              <Button onClick={handleAddStep} data-testid="button-add-step">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Step
-              </Button>
+              <h2 className="text-xl font-semibold">
+                {viewMode === "preview" ? "Preview: How Users Will See This Module" : "Learning Steps"}
+              </h2>
+              {viewMode === "edit" && (
+                <Button onClick={handleAddStep} data-testid="button-add-step">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Step
+                </Button>
+              )}
             </div>
 
             {steps.length === 0 ? (
@@ -872,6 +998,12 @@ export default function ModuleBuilder() {
                   </Button>
                 </CardContent>
               </Card>
+            ) : viewMode === "preview" ? (
+              <div className="space-y-6">
+                {steps.map((step, index) => (
+                  <StepPreview key={step.tempId} step={step} index={index} />
+                ))}
+              </div>
             ) : (
               <DndContext
                 sensors={sensors}
