@@ -12,6 +12,10 @@ import {
   pathwayModules,
   groupPathwayAssignments,
   userPathwayAssignments,
+  moduleSteps,
+  stepContentBlocks,
+  stepCheckpoints,
+  userStepProgress,
   type User,
   type UpsertUser,
   type Module,
@@ -38,12 +42,22 @@ import {
   type InsertGroupPathwayAssignment,
   type UserPathwayAssignment,
   type InsertUserPathwayAssignment,
+  type ModuleStep,
+  type InsertModuleStep,
+  type StepContentBlock,
+  type InsertStepContentBlock,
+  type StepCheckpoint,
+  type InsertStepCheckpoint,
+  type UserStepProgress,
+  type InsertUserStepProgress,
   type ModuleWithProgress,
   type QuizAttemptWithDetails,
   type UserGroupWithMembers,
   type TrainingPathwayWithModules,
   type UserWithProgress,
   type InlineAnswer,
+  type ModuleWithSteps,
+  type StepWithProgress,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, inArray } from "drizzle-orm";
@@ -146,6 +160,34 @@ export interface IStorage {
   getModuleWithProgress(moduleId: number, userId: string): Promise<ModuleWithProgress | undefined>;
   getModulesWithProgress(userId: string): Promise<ModuleWithProgress[]>;
   getUserAssignedPathways(userId: string): Promise<TrainingPathwayWithModules[]>;
+  
+  // Step-based module operations
+  getModuleSteps(moduleId: number): Promise<ModuleStep[]>;
+  getModuleStep(stepId: number): Promise<ModuleStep | undefined>;
+  createModuleStep(step: InsertModuleStep): Promise<ModuleStep>;
+  updateModuleStep(stepId: number, step: Partial<InsertModuleStep>): Promise<ModuleStep | undefined>;
+  deleteModuleStep(stepId: number): Promise<void>;
+  deleteModuleStepsByModuleId(moduleId: number): Promise<void>;
+  
+  // Step content block operations
+  getStepContentBlocks(stepId: number): Promise<StepContentBlock[]>;
+  createStepContentBlock(block: InsertStepContentBlock): Promise<StepContentBlock>;
+  updateStepContentBlock(id: number, block: Partial<InsertStepContentBlock>): Promise<StepContentBlock | undefined>;
+  deleteStepContentBlock(id: number): Promise<void>;
+  deleteStepContentBlocksByStepId(stepId: number): Promise<void>;
+  
+  // Step checkpoint operations
+  getStepCheckpoint(stepId: number): Promise<StepCheckpoint | undefined>;
+  createOrUpdateStepCheckpoint(checkpoint: InsertStepCheckpoint): Promise<StepCheckpoint>;
+  deleteStepCheckpoint(stepId: number): Promise<void>;
+  
+  // User step progress operations
+  getUserStepProgress(userId: string, stepId: number): Promise<UserStepProgress | undefined>;
+  getUserModuleProgress(userId: string, moduleId: number): Promise<UserStepProgress[]>;
+  submitStepCheckpoint(userId: string, stepId: number, selectedAnswerIndex: number): Promise<{ correct: boolean; unlockNext: boolean }>;
+  
+  // Step-based module with progress
+  getModuleWithSteps(moduleId: number, userId: string): Promise<ModuleWithSteps | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -818,6 +860,206 @@ export class DatabaseStorage implements IStorage {
     }
     
     return result;
+  }
+
+  // ==========================================
+  // STEP-BASED MODULE OPERATIONS
+  // ==========================================
+
+  async getModuleSteps(moduleId: number): Promise<ModuleStep[]> {
+    return db.select().from(moduleSteps).where(eq(moduleSteps.moduleId, moduleId)).orderBy(moduleSteps.order);
+  }
+
+  async getModuleStep(stepId: number): Promise<ModuleStep | undefined> {
+    const [step] = await db.select().from(moduleSteps).where(eq(moduleSteps.id, stepId));
+    return step;
+  }
+
+  async createModuleStep(step: InsertModuleStep): Promise<ModuleStep> {
+    const [created] = await db.insert(moduleSteps).values(step).returning();
+    return created;
+  }
+
+  async updateModuleStep(stepId: number, step: Partial<InsertModuleStep>): Promise<ModuleStep | undefined> {
+    const [updated] = await db.update(moduleSteps).set({ ...step, updatedAt: new Date() }).where(eq(moduleSteps.id, stepId)).returning();
+    return updated;
+  }
+
+  async deleteModuleStep(stepId: number): Promise<void> {
+    await db.delete(moduleSteps).where(eq(moduleSteps.id, stepId));
+  }
+
+  async deleteModuleStepsByModuleId(moduleId: number): Promise<void> {
+    await db.delete(moduleSteps).where(eq(moduleSteps.moduleId, moduleId));
+  }
+
+  // Step content block operations
+  async getStepContentBlocks(stepId: number): Promise<StepContentBlock[]> {
+    return db.select().from(stepContentBlocks).where(eq(stepContentBlocks.stepId, stepId)).orderBy(stepContentBlocks.order);
+  }
+
+  async createStepContentBlock(block: InsertStepContentBlock): Promise<StepContentBlock> {
+    const [created] = await db.insert(stepContentBlocks).values(block).returning();
+    return created;
+  }
+
+  async updateStepContentBlock(id: number, block: Partial<InsertStepContentBlock>): Promise<StepContentBlock | undefined> {
+    const [updated] = await db.update(stepContentBlocks).set({ ...block, updatedAt: new Date() }).where(eq(stepContentBlocks.id, id)).returning();
+    return updated;
+  }
+
+  async deleteStepContentBlock(id: number): Promise<void> {
+    await db.delete(stepContentBlocks).where(eq(stepContentBlocks.id, id));
+  }
+
+  async deleteStepContentBlocksByStepId(stepId: number): Promise<void> {
+    await db.delete(stepContentBlocks).where(eq(stepContentBlocks.stepId, stepId));
+  }
+
+  // Step checkpoint operations
+  async getStepCheckpoint(stepId: number): Promise<StepCheckpoint | undefined> {
+    const [checkpoint] = await db.select().from(stepCheckpoints).where(eq(stepCheckpoints.stepId, stepId));
+    return checkpoint;
+  }
+
+  async createOrUpdateStepCheckpoint(checkpoint: InsertStepCheckpoint): Promise<StepCheckpoint> {
+    const existing = await this.getStepCheckpoint(checkpoint.stepId);
+    const data = {
+      stepId: checkpoint.stepId,
+      question: checkpoint.question,
+      options: [...checkpoint.options] as string[],
+      correctOptionIndex: checkpoint.correctOptionIndex,
+      explanation: checkpoint.explanation,
+    };
+    if (existing) {
+      const [updated] = await db.update(stepCheckpoints)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(stepCheckpoints.stepId, checkpoint.stepId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(stepCheckpoints).values(data).returning();
+    return created;
+  }
+
+  async deleteStepCheckpoint(stepId: number): Promise<void> {
+    await db.delete(stepCheckpoints).where(eq(stepCheckpoints.stepId, stepId));
+  }
+
+  // User step progress operations
+  async getUserStepProgress(userId: string, stepId: number): Promise<UserStepProgress | undefined> {
+    const [progress] = await db.select().from(userStepProgress)
+      .where(and(eq(userStepProgress.userId, userId), eq(userStepProgress.stepId, stepId)));
+    return progress;
+  }
+
+  async getUserModuleProgress(userId: string, moduleId: number): Promise<UserStepProgress[]> {
+    const steps = await this.getModuleSteps(moduleId);
+    const stepIds = steps.map(s => s.id);
+    if (stepIds.length === 0) return [];
+    return db.select().from(userStepProgress)
+      .where(and(eq(userStepProgress.userId, userId), inArray(userStepProgress.stepId, stepIds)));
+  }
+
+  async submitStepCheckpoint(userId: string, stepId: number, selectedAnswerIndex: number): Promise<{ correct: boolean; unlockNext: boolean }> {
+    const checkpoint = await this.getStepCheckpoint(stepId);
+    if (!checkpoint) {
+      throw new Error("Checkpoint not found");
+    }
+
+    const correct = selectedAnswerIndex === checkpoint.correctOptionIndex;
+    
+    // Check if progress already exists
+    const existingProgress = await this.getUserStepProgress(userId, stepId);
+    if (existingProgress) {
+      // Update existing progress
+      await db.update(userStepProgress)
+        .set({ selectedAnswerIndex, correct, completedAt: new Date() })
+        .where(eq(userStepProgress.id, existingProgress.id));
+    } else {
+      // Create new progress
+      await db.insert(userStepProgress).values({
+        userId,
+        stepId,
+        selectedAnswerIndex,
+        correct,
+        completedAt: new Date(),
+      });
+    }
+
+    // Unlock next step (always unlock after answering, regardless of correctness)
+    return { correct, unlockNext: true };
+  }
+
+  // Step-based module with progress
+  async getModuleWithSteps(moduleId: number, userId: string): Promise<ModuleWithSteps | undefined> {
+    const mod = await this.getModule(moduleId);
+    if (!mod) return undefined;
+
+    const steps = await this.getModuleSteps(moduleId);
+    const userProgress = await this.getUserModuleProgress(userId, moduleId);
+    const progressMap = new Map(userProgress.map(p => [p.stepId, p]));
+
+    const stepsWithProgress: StepWithProgress[] = [];
+    let currentStepIndex = 0;
+    let completedSteps = 0;
+    let totalCorrect = 0;
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      const contentBlocks = await this.getStepContentBlocks(step.id);
+      const checkpoint = await this.getStepCheckpoint(step.id);
+      const progress = progressMap.get(step.id);
+
+      // First step is always unlocked, subsequent steps unlock after previous step is completed
+      const isUnlocked = i === 0 || (i > 0 && progressMap.has(steps[i - 1].id));
+      const isCompleted = progress?.completedAt !== null && progress?.completedAt !== undefined;
+
+      if (isCompleted) {
+        completedSteps++;
+        if (progress?.correct) totalCorrect++;
+      }
+
+      if (!isCompleted && isUnlocked && currentStepIndex === 0) {
+        currentStepIndex = i;
+      }
+
+      stepsWithProgress.push({
+        ...step,
+        contentBlocks,
+        checkpoint: isUnlocked ? checkpoint : undefined, // Hide checkpoint if locked
+        isUnlocked,
+        isCompleted,
+        userAnswer: progress?.selectedAnswerIndex ?? undefined,
+        wasCorrect: progress?.correct ?? undefined,
+      });
+    }
+
+    // If all steps completed, set currentStepIndex to last step
+    if (completedSteps === steps.length && steps.length > 0) {
+      currentStepIndex = steps.length - 1;
+    }
+
+    // Calculate module score
+    const moduleScore = steps.length > 0 ? Math.round((totalCorrect / steps.length) * 100) : undefined;
+
+    // Determine status
+    let status: 'not_started' | 'in_progress' | 'completed' = 'not_started';
+    if (completedSteps === steps.length && steps.length > 0) {
+      status = 'completed';
+    } else if (completedSteps > 0) {
+      status = 'in_progress';
+    }
+
+    return {
+      ...mod,
+      steps: stepsWithProgress,
+      currentStepIndex,
+      totalSteps: steps.length,
+      completedSteps,
+      moduleScore,
+      status,
+    };
   }
 }
 
