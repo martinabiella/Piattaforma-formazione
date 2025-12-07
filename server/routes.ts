@@ -157,6 +157,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // =========== Step-based Module Routes ===========
+
+  // Get module with steps (step-based learning)
+  app.get("/api/modules/:id/steps", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const moduleId = parseInt(req.params.id);
+      
+      if (isNaN(moduleId)) {
+        return res.status(400).json({ message: "Invalid module ID" });
+      }
+
+      const moduleWithSteps = await storage.getModuleWithSteps(moduleId, userId);
+      
+      if (!moduleWithSteps) {
+        return res.status(404).json({ message: "Module not found" });
+      }
+
+      // Check if module is published or user is admin
+      if (!moduleWithSteps.published) {
+        const user = await storage.getUser(userId);
+        if (user?.role !== "admin") {
+          return res.status(404).json({ message: "Module not found" });
+        }
+      }
+
+      res.json(moduleWithSteps);
+    } catch (error) {
+      console.error("Error fetching module with steps:", error);
+      res.status(500).json({ message: "Failed to fetch module with steps" });
+    }
+  });
+
+  // Submit step checkpoint answer
+  app.post("/api/steps/:stepId/checkpoint", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const stepId = parseInt(req.params.stepId);
+      const { selectedAnswerIndex } = req.body;
+      
+      if (isNaN(stepId)) {
+        return res.status(400).json({ message: "Invalid step ID" });
+      }
+
+      if (typeof selectedAnswerIndex !== "number") {
+        return res.status(400).json({ message: "selectedAnswerIndex is required" });
+      }
+
+      // Check if step exists and user has access
+      const step = await storage.getModuleStep(stepId);
+      if (!step) {
+        return res.status(404).json({ message: "Step not found" });
+      }
+
+      // Get module to check if user has access
+      const moduleWithSteps = await storage.getModuleWithSteps(step.moduleId, userId);
+      if (!moduleWithSteps) {
+        return res.status(404).json({ message: "Module not found" });
+      }
+
+      // Check if step is unlocked for user
+      const stepData = moduleWithSteps.steps.find(s => s.id === stepId);
+      if (!stepData?.isUnlocked) {
+        return res.status(403).json({ message: "Step is locked" });
+      }
+
+      const result = await storage.submitStepCheckpoint(userId, stepId, selectedAnswerIndex);
+      
+      // Get checkpoint to include correct answer info
+      const checkpoint = await storage.getStepCheckpoint(stepId);
+      
+      res.json({
+        ...result,
+        correctAnswerIndex: checkpoint?.correctOptionIndex,
+        explanation: checkpoint?.explanation,
+      });
+    } catch (error) {
+      console.error("Error submitting checkpoint:", error);
+      res.status(500).json({ message: "Failed to submit checkpoint" });
+    }
+  });
+
   // =========== Admin Routes ===========
 
   // Admin stats
@@ -495,6 +577,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching attempts:", error);
       res.status(500).json({ message: "Failed to fetch attempts" });
+    }
+  });
+
+  // =========== Admin Step Routes (Step-based modules) ===========
+
+  // Get module steps (admin)
+  app.get("/api/admin/modules/:id/steps", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const moduleId = parseInt(req.params.id);
+      if (isNaN(moduleId)) {
+        return res.status(400).json({ message: "Invalid module ID" });
+      }
+
+      const steps = await storage.getModuleSteps(moduleId);
+      
+      // Get content blocks and checkpoints for each step
+      const stepsWithDetails = await Promise.all(
+        steps.map(async (step) => {
+          const contentBlocks = await storage.getStepContentBlocks(step.id);
+          const checkpoint = await storage.getStepCheckpoint(step.id);
+          return { ...step, contentBlocks, checkpoint };
+        })
+      );
+
+      res.json(stepsWithDetails);
+    } catch (error) {
+      console.error("Error fetching steps:", error);
+      res.status(500).json({ message: "Failed to fetch steps" });
+    }
+  });
+
+  // Update module steps (admin) - full replace
+  app.put("/api/admin/modules/:id/steps", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const moduleId = parseInt(req.params.id);
+      if (isNaN(moduleId)) {
+        return res.status(400).json({ message: "Invalid module ID" });
+      }
+
+      const { steps } = req.body;
+      if (!Array.isArray(steps)) {
+        return res.status(400).json({ message: "Steps must be an array" });
+      }
+
+      // Get existing steps
+      const existingSteps = await storage.getModuleSteps(moduleId);
+      const existingStepIds = new Set(existingSteps.map(s => s.id));
+      const newStepIds = new Set(steps.filter((s: any) => s.id).map((s: any) => s.id));
+
+      // Delete steps that are no longer in the list
+      for (const existingStep of existingSteps) {
+        if (!newStepIds.has(existingStep.id)) {
+          // Delete content blocks and checkpoint first
+          await storage.deleteStepContentBlocksByStepId(existingStep.id);
+          await storage.deleteStepCheckpoint(existingStep.id);
+          await storage.deleteModuleStep(existingStep.id);
+        }
+      }
+
+      // Create or update steps
+      const resultSteps = [];
+      for (let i = 0; i < steps.length; i++) {
+        const stepData = steps[i];
+        const step = stepData.id && existingStepIds.has(stepData.id)
+          ? await storage.updateModuleStep(stepData.id, {
+              title: stepData.title,
+              order: i + 1,
+            })
+          : await storage.createModuleStep({
+              moduleId,
+              title: stepData.title,
+              order: i + 1,
+            });
+
+        if (!step) continue;
+
+        // Handle content blocks
+        const existingBlocks = await storage.getStepContentBlocks(step.id);
+        const existingBlockIds = new Set(existingBlocks.map(b => b.id));
+        const newBlockIds = new Set(
+          (stepData.contentBlocks || []).filter((b: any) => b.id).map((b: any) => b.id)
+        );
+
+        // Delete removed blocks
+        for (const existingBlock of existingBlocks) {
+          if (!newBlockIds.has(existingBlock.id)) {
+            await storage.deleteStepContentBlock(existingBlock.id);
+          }
+        }
+
+        // Create or update content blocks
+        const resultBlocks = [];
+        const contentBlocks = stepData.contentBlocks || [];
+        for (let j = 0; j < contentBlocks.length; j++) {
+          const blockData = contentBlocks[j];
+          const block = blockData.id && existingBlockIds.has(blockData.id)
+            ? await storage.updateStepContentBlock(blockData.id, {
+                blockType: blockData.blockType || 'text',
+                content: blockData.content || null,
+                imageUrl: blockData.imageUrl || null,
+                order: j + 1,
+              })
+            : await storage.createStepContentBlock({
+                stepId: step.id,
+                blockType: blockData.blockType || 'text',
+                content: blockData.content || null,
+                imageUrl: blockData.imageUrl || null,
+                order: j + 1,
+              });
+          if (block) resultBlocks.push(block);
+        }
+
+        // Handle checkpoint
+        let checkpoint = null;
+        if (stepData.checkpoint) {
+          const cp = stepData.checkpoint;
+          if (cp.question && Array.isArray(cp.options) && cp.options.length >= 2) {
+            checkpoint = await storage.createOrUpdateStepCheckpoint({
+              stepId: step.id,
+              question: cp.question,
+              options: cp.options,
+              correctOptionIndex: cp.correctOptionIndex ?? 0,
+              explanation: cp.explanation || null,
+            });
+          }
+        } else {
+          // Remove checkpoint if not provided
+          await storage.deleteStepCheckpoint(step.id);
+        }
+
+        resultSteps.push({ ...step, contentBlocks: resultBlocks, checkpoint });
+      }
+
+      res.json(resultSteps);
+    } catch (error) {
+      console.error("Error updating steps:", error);
+      res.status(500).json({ message: "Failed to update steps" });
     }
   });
 
