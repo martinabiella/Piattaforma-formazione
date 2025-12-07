@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
 import ModuleContent from "@/pages/module-content";
+import ModuleSteps from "@/pages/module-steps";
 import Quiz from "@/pages/quiz";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminModules from "@/pages/admin/modules";
@@ -94,6 +95,12 @@ function Router() {
       <Route path="/app/modules/:id">
         <ProtectedRoute>
           <ModuleContent />
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/app/modules/:id/learn">
+        <ProtectedRoute>
+          <ModuleSteps />
         </ProtectedRoute>
       </Route>
       
