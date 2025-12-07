@@ -166,8 +166,94 @@ export const modules = pgTable("modules", {
 export const modulesRelations = relations(modules, ({ many, one }) => ({
   sections: many(moduleSections),
   contentBlocks: many(contentBlocks),
+  steps: many(moduleSteps),
   quiz: one(quizzes),
   pathwayModules: many(pathwayModules),
+}));
+
+// ==========================================
+// STEP-BASED MODULE SYSTEM (NEW)
+// ==========================================
+
+// Module Steps - ordered topics within a module
+export const moduleSteps = pgTable("module_steps", {
+  id: serial("id").primaryKey(),
+  moduleId: integer("module_id").references(() => modules.id, { onDelete: "cascade" }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  order: integer("order").default(1).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const moduleStepsRelations = relations(moduleSteps, ({ one, many }) => ({
+  module: one(modules, {
+    fields: [moduleSteps.moduleId],
+    references: [modules.id],
+  }),
+  contentBlocks: many(stepContentBlocks),
+  checkpoint: one(stepCheckpoints),
+}));
+
+// Step Content Blocks - learning content within a step
+export const stepContentBlocks = pgTable("step_content_blocks", {
+  id: serial("id").primaryKey(),
+  stepId: integer("step_id").references(() => moduleSteps.id, { onDelete: "cascade" }).notNull(),
+  blockType: varchar("block_type", { length: 20 }).notNull().default("text"), // 'text' or 'image'
+  order: integer("order").default(1).notNull(),
+  title: varchar("title", { length: 255 }),
+  content: text("content"),
+  imageUrl: varchar("image_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const stepContentBlocksRelations = relations(stepContentBlocks, ({ one }) => ({
+  step: one(moduleSteps, {
+    fields: [stepContentBlocks.stepId],
+    references: [moduleSteps.id],
+  }),
+}));
+
+// Step Checkpoints - mandatory question at end of each step
+export const stepCheckpoints = pgTable("step_checkpoints", {
+  id: serial("id").primaryKey(),
+  stepId: integer("step_id").references(() => moduleSteps.id, { onDelete: "cascade" }).notNull().unique(),
+  question: text("question").notNull(),
+  options: jsonb("options").$type<string[]>().notNull(),
+  correctOptionIndex: integer("correct_option_index").notNull(),
+  explanation: text("explanation"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const stepCheckpointsRelations = relations(stepCheckpoints, ({ one }) => ({
+  step: one(moduleSteps, {
+    fields: [stepCheckpoints.stepId],
+    references: [moduleSteps.id],
+  }),
+}));
+
+// User Step Progress - tracks user progress through steps
+export const userStepProgress = pgTable("user_step_progress", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  stepId: integer("step_id").references(() => moduleSteps.id, { onDelete: "cascade" }).notNull(),
+  selectedAnswerIndex: integer("selected_answer_index"),
+  correct: boolean("correct"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const userStepProgressRelations = relations(userStepProgress, ({ one }) => ({
+  user: one(users, {
+    fields: [userStepProgress.userId],
+    references: [users.id],
+  }),
+  step: one(moduleSteps, {
+    fields: [userStepProgress.stepId],
+    references: [moduleSteps.id],
+  }),
 }));
 
 // Module sections table (legacy - kept for backwards compatibility)
@@ -354,6 +440,30 @@ export const insertUserPathwayAssignmentSchema = createInsertSchema(userPathwayA
   createdAt: true,
 });
 
+// Step-based module insert schemas
+export const insertModuleStepSchema = createInsertSchema(moduleSteps).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertStepContentBlockSchema = createInsertSchema(stepContentBlocks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertStepCheckpointSchema = createInsertSchema(stepCheckpoints).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUserStepProgressSchema = createInsertSchema(userStepProgress).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -395,6 +505,19 @@ export type InsertGroupPathwayAssignment = z.infer<typeof insertGroupPathwayAssi
 export type UserPathwayAssignment = typeof userPathwayAssignments.$inferSelect;
 export type InsertUserPathwayAssignment = z.infer<typeof insertUserPathwayAssignmentSchema>;
 
+// Step-based module types
+export type ModuleStep = typeof moduleSteps.$inferSelect;
+export type InsertModuleStep = z.infer<typeof insertModuleStepSchema>;
+
+export type StepContentBlock = typeof stepContentBlocks.$inferSelect;
+export type InsertStepContentBlock = z.infer<typeof insertStepContentBlockSchema>;
+
+export type StepCheckpoint = typeof stepCheckpoints.$inferSelect;
+export type InsertStepCheckpoint = z.infer<typeof insertStepCheckpointSchema>;
+
+export type UserStepProgress = typeof userStepProgress.$inferSelect;
+export type InsertUserStepProgress = z.infer<typeof insertUserStepProgressSchema>;
+
 // Extended types for frontend use
 export type ModuleWithProgress = Module & {
   status: 'not_started' | 'in_progress' | 'completed';
@@ -431,4 +554,26 @@ export type InlineAnswer = {
   blockId: number;
   selectedIndex: number;
   correct: boolean;
+};
+
+// Step-based module extended types
+export type StepWithContent = ModuleStep & {
+  contentBlocks: StepContentBlock[];
+  checkpoint?: StepCheckpoint;
+};
+
+export type StepWithProgress = StepWithContent & {
+  isUnlocked: boolean;
+  isCompleted: boolean;
+  userAnswer?: number;
+  wasCorrect?: boolean;
+};
+
+export type ModuleWithSteps = Module & {
+  steps: StepWithProgress[];
+  currentStepIndex: number;
+  totalSteps: number;
+  completedSteps: number;
+  moduleScore?: number; // Percentage of correct checkpoint answers
+  status: 'not_started' | 'in_progress' | 'completed';
 };
