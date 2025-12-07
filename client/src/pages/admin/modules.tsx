@@ -33,7 +33,8 @@ import {
   BookOpen,
   ClipboardCheck,
   GripVertical,
-  ListOrdered
+  ListOrdered,
+  Layers
 } from "lucide-react";
 import type { Module } from "@shared/schema";
 
@@ -69,7 +70,7 @@ function EmptyState() {
           Create your first training module to get started.
         </p>
         <Button asChild data-testid="button-create-first-module">
-          <Link href="/admin/modules/new/edit" className="flex items-center gap-2">
+          <Link href="/admin/modules/new/builder" className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
             Create Module
           </Link>
@@ -175,7 +176,7 @@ export default function AdminModules() {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <CardTitle>All Modules</CardTitle>
             <Button asChild data-testid="button-create-module">
-              <Link href="/admin/modules/new/edit" className="flex items-center gap-2">
+              <Link href="/admin/modules/new/builder" className="flex items-center gap-2">
                 <Plus className="h-4 w-4" />
                 Create Module
               </Link>
@@ -235,24 +236,14 @@ export default function AdminModules() {
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-2">
                       <Button 
-                        variant="ghost" 
-                        size="icon" 
+                        variant="outline" 
+                        size="sm" 
                         asChild
-                        data-testid={`button-edit-${module.id}`}
+                        data-testid={`button-builder-${module.id}`}
                       >
-                        <Link href={`/admin/modules/${module.id}/edit`}>
-                          <Pencil className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        asChild
-                        data-testid={`button-steps-${module.id}`}
-                        title="Edit Learning Steps"
-                      >
-                        <Link href={`/admin/modules/${module.id}/steps/edit`}>
-                          <ListOrdered className="h-4 w-4" />
+                        <Link href={`/admin/modules/${module.id}/builder`}>
+                          <Layers className="h-4 w-4 mr-1" />
+                          Builder
                         </Link>
                       </Button>
                       <Button 
@@ -260,6 +251,7 @@ export default function AdminModules() {
                         size="icon" 
                         asChild
                         data-testid={`button-quiz-${module.id}`}
+                        title="Edit Final Quiz"
                       >
                         <Link href={`/admin/modules/${module.id}/quiz/edit`}>
                           <ClipboardCheck className="h-4 w-4" />
