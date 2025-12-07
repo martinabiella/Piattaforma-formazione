@@ -21,9 +21,15 @@ LearnHub is a comprehensive Learning Management System (LMS) web application des
 - **Training pathways**: Bundle multiple modules into structured learning experiences
 - **Pathway assignments**: Assign pathways to groups or individual users
 
+**Unified Module Builder (Admin):**
+- **Edit/Preview toggle**: Switch between editing mode and preview mode to see exactly what learners will see
+- **Drag-and-drop reordering**: Reorder steps, content blocks, and checkpoints with intuitive drag handles
+- **Live preview**: Preview mode shows steps with same typography, layout, and styling as learner experience
+- **Checkpoint preview**: Shows neutral option cards with disabled buttons matching learner initial state, plus subtle "Correct" badge for admin reference
+
 The application serves two primary user roles:
 - **Users**: Access published training modules, answer inline questions, complete quizzes, and track learning progress
-- **Admins**: Create/edit modules with content blocks, manage users/groups, build training pathways, and view results
+- **Admins**: Create/edit modules with unified builder interface (Edit/Preview toggle, drag-and-drop), manage users/groups, build training pathways, and view results
 
 # User Preferences
 
