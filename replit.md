@@ -4,6 +4,12 @@ LearnHub is a comprehensive Learning Management System (LMS) web application des
 
 ## Key Features
 
+**Step-Based Learning (New):**
+- **Sequential steps**: Modules contain ordered steps (topics) that users progress through sequentially
+- **Checkpoint questions**: Each step has a mandatory checkpoint question that gates access to the next step
+- **Progress tracking**: Users can review previously completed steps but cannot access future locked steps
+- **Combined scoring**: All checkpoint answers contribute to the final module score
+
 **Enhanced Learning Experience:**
 - **Block-based module content**: Modules use alternating text blocks and inline questions for progressive learning
 - **Inline questions**: Users answer questions while learning, contributing to their final score
@@ -133,6 +139,22 @@ Preferred communication style: Simple, everyday language.
 
 13. **sessions** - Express session storage
     - Manages authenticated user sessions
+
+14. **moduleSteps** - Sequential learning steps within modules (new)
+    - Contains stepId, moduleId, title, stepOrder
+    - Each step represents a learning topic
+
+15. **stepContentBlocks** - Content blocks within steps (new)
+    - Supports text and image content
+    - Ordered blocks for progressive learning
+
+16. **stepCheckpoints** - Checkpoint questions for steps (new)
+    - One checkpoint per step that gates progression
+    - Multiple choice with options and correctOptionIndex
+
+17. **userStepProgress** - User progress through steps (new)
+    - Tracks which steps are unlocked per user
+    - Records checkpoint answers and correctness
 
 **Database Migrations**: Managed via Drizzle Kit with migration files in `/migrations`
 
