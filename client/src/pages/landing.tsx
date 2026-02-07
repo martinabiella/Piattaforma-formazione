@@ -1,13 +1,14 @@
 import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Header } from "@/components/header";
-import { 
-  GraduationCap, 
-  BookOpen, 
-  Trophy, 
-  BarChart3, 
+import {
+  GraduationCap,
+  BookOpen,
+  Trophy,
+  BarChart3,
   ArrowRight,
-  CheckCircle2 
+  CheckCircle2
 } from "lucide-react";
 
 const features = [
@@ -39,7 +40,7 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main>
         <section className="relative overflow-hidden py-20 md:py-32">
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/10" />
@@ -49,23 +50,23 @@ export default function Landing() {
                 <GraduationCap className="h-4 w-4" />
                 <span>Professional Online Training</span>
               </div>
-              
+
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6" data-testid="text-hero-title">
                 Master New Skills with{" "}
                 <span className="text-primary">Interactive Learning</span>
               </h1>
-              
+
               <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto" data-testid="text-hero-description">
-                Access comprehensive training modules, complete assessments, and track your progress. 
+                Access comprehensive training modules, complete assessments, and track your progress.
                 Start your learning journey today.
               </p>
-              
+
               <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <Button asChild size="lg" className="w-full sm:w-auto" data-testid="button-get-started">
-                  <a href="/api/login" className="flex items-center gap-2">
+                  <Link href="/auth" className="flex items-center gap-2">
                     Get Started
                     <ArrowRight className="h-5 w-5" />
-                  </a>
+                  </Link>
                 </Button>
                 <Button variant="outline" size="lg" className="w-full sm:w-auto" data-testid="button-learn-more">
                   Learn More
@@ -85,7 +86,7 @@ export default function Landing() {
                 Our platform provides all the tools and resources you need for effective learning.
               </p>
             </div>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {features.map((feature, index) => (
                 <Card key={index} className="hover-elevate" data-testid={`card-feature-${index}`}>
@@ -110,11 +111,11 @@ export default function Landing() {
                   Why Choose Our Platform?
                 </h2>
                 <p className="text-muted-foreground mb-8">
-                  We've designed our learning platform with your success in mind. 
-                  Whether you're upskilling for your career or exploring new interests, 
+                  We've designed our learning platform with your success in mind.
+                  Whether you're upskilling for your career or exploring new interests,
                   we've got you covered.
                 </p>
-                
+
                 <ul className="space-y-4">
                   {benefits.map((benefit, index) => (
                     <li key={index} className="flex items-center gap-3" data-testid={`text-benefit-${index}`}>
@@ -126,7 +127,7 @@ export default function Landing() {
                   ))}
                 </ul>
               </div>
-              
+
               <div className="relative">
                 <div className="aspect-square rounded-2xl bg-gradient-to-br from-primary/20 via-primary/10 to-accent/20 flex items-center justify-center">
                   <GraduationCap className="h-32 w-32 text-primary/40" />
@@ -144,16 +145,16 @@ export default function Landing() {
             <p className="text-primary-foreground/80 mb-8 max-w-2xl mx-auto">
               Join thousands of learners who have transformed their careers with our training modules.
             </p>
-            <Button 
-              variant="secondary" 
-              size="lg" 
+            <Button
+              variant="secondary"
+              size="lg"
               asChild
               data-testid="button-cta"
             >
-              <a href="/api/login" className="flex items-center gap-2">
+              <Link href="/auth" className="flex items-center gap-2">
                 Start Your Journey
                 <ArrowRight className="h-5 w-5" />
-              </a>
+              </Link>
             </Button>
           </div>
         </section>

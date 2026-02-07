@@ -1,8 +1,22 @@
 import { db } from "./db";
-import { modules, quizzes, moduleSections, quizQuestions } from "@shared/schema";
+import { modules, quizzes, moduleSections, quizQuestions, users } from "@shared/schema";
+import { hashPassword } from "./auth";
+import { eq } from "drizzle-orm";
 
 async function seed() {
   console.log("Seeding database...");
+
+  // Create admin user if not exists
+  const [existingAdmin] = await db.select().from(users).where(eq(users.username, "admin"));
+  if (!existingAdmin) {
+    const hashedPassword = await hashPassword("admin");
+    await db.insert(users).values({
+      username: "admin",
+      password: hashedPassword,
+      role: "admin",
+    });
+    console.log("Created admin user (admin/admin)");
+  }
 
   // Check if modules already exist
   const existingModules = await db.select().from(modules);

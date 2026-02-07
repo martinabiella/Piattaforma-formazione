@@ -65,13 +65,14 @@ import { eq, desc, and, sql, inArray } from "drizzle-orm";
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
   getUserCount(): Promise<number>;
   getAllUsers(): Promise<User[]>;
   getUsersWithProgress(): Promise<UserWithProgress[]>;
   getUserWithProgress(userId: string): Promise<UserWithProgress | undefined>;
   updateUserRole(userId: string, role: string): Promise<User | undefined>;
-  
+
   // Module operations
   getModules(): Promise<Module[]>;
   getPublishedModules(): Promise<Module[]>;
@@ -79,14 +80,14 @@ export interface IStorage {
   createModule(module: InsertModule): Promise<Module>;
   updateModule(id: number, module: Partial<InsertModule>): Promise<Module | undefined>;
   deleteModule(id: number): Promise<void>;
-  
+
   // Section operations (legacy)
   getSections(moduleId: number): Promise<ModuleSection[]>;
   createSection(section: InsertModuleSection): Promise<ModuleSection>;
   updateSection(id: number, section: Partial<InsertModuleSection>): Promise<ModuleSection | undefined>;
   deleteSection(id: number): Promise<void>;
   deleteSectionsByModuleId(moduleId: number): Promise<void>;
-  
+
   // Content Block operations (new block-based system)
   getContentBlocks(moduleId: number): Promise<ContentBlock[]>;
   getContentBlock(id: number): Promise<ContentBlock | undefined>;
@@ -94,19 +95,19 @@ export interface IStorage {
   updateContentBlock(id: number, block: Partial<InsertContentBlock>): Promise<ContentBlock | undefined>;
   deleteContentBlock(id: number): Promise<void>;
   deleteContentBlocksByModuleId(moduleId: number): Promise<void>;
-  
+
   // Quiz operations
   getQuiz(moduleId: number): Promise<Quiz | undefined>;
   getQuizById(id: number): Promise<Quiz | undefined>;
   createOrUpdateQuiz(moduleId: number, passingScore: number): Promise<Quiz>;
-  
+
   // Quiz question operations
   getQuestions(quizId: number): Promise<QuizQuestion[]>;
   createQuestion(question: InsertQuizQuestion): Promise<QuizQuestion>;
   updateQuestion(id: number, question: Partial<InsertQuizQuestion>): Promise<QuizQuestion | undefined>;
   deleteQuestion(id: number): Promise<void>;
   deleteQuestionsByQuizId(quizId: number): Promise<void>;
-  
+
   // Quiz attempt operations
   getAttempts(userId: string): Promise<QuizAttempt[]>;
   getAttemptsByUser(userId: string): Promise<QuizAttemptWithDetails[]>;
@@ -117,7 +118,7 @@ export interface IStorage {
   createAttempt(attempt: InsertQuizAttempt): Promise<QuizAttempt>;
   getAttemptCount(): Promise<number>;
   getPassedAttemptCount(): Promise<number>;
-  
+
   // User Group operations
   getGroups(): Promise<UserGroup[]>;
   getGroupsWithMembers(): Promise<UserGroupWithMembers[]>;
@@ -126,13 +127,13 @@ export interface IStorage {
   createGroup(group: InsertUserGroup): Promise<UserGroup>;
   updateGroup(id: number, group: Partial<InsertUserGroup>): Promise<UserGroup | undefined>;
   deleteGroup(id: number): Promise<void>;
-  
+
   // Group Member operations
   getGroupMembers(groupId: number): Promise<(GroupMember & { user?: User })[]>;
   addGroupMember(member: InsertGroupMember): Promise<GroupMember>;
   removeGroupMember(groupId: number, userId: string): Promise<void>;
   getUserGroups(userId: string): Promise<UserGroup[]>;
-  
+
   // Training Pathway operations
   getPathways(): Promise<TrainingPathway[]>;
   getPathwaysWithModules(): Promise<TrainingPathwayWithModules[]>;
@@ -141,13 +142,13 @@ export interface IStorage {
   createPathway(pathway: InsertTrainingPathway): Promise<TrainingPathway>;
   updatePathway(id: number, pathway: Partial<InsertTrainingPathway>): Promise<TrainingPathway | undefined>;
   deletePathway(id: number): Promise<void>;
-  
+
   // Pathway Module operations
   getPathwayModules(pathwayId: number): Promise<(PathwayModule & { module?: Module })[]>;
   addPathwayModule(pathwayModule: InsertPathwayModule): Promise<PathwayModule>;
   removePathwayModule(pathwayId: number, moduleId: number): Promise<void>;
   updatePathwayModuleOrder(pathwayId: number, moduleIds: number[]): Promise<void>;
-  
+
   // Pathway Assignment operations
   getGroupPathwayAssignments(groupId: number): Promise<GroupPathwayAssignment[]>;
   getUserPathwayAssignments(userId: string): Promise<UserPathwayAssignment[]>;
@@ -155,12 +156,12 @@ export interface IStorage {
   assignPathwayToUser(assignment: InsertUserPathwayAssignment): Promise<UserPathwayAssignment>;
   removeGroupPathwayAssignment(groupId: number, pathwayId: number): Promise<void>;
   removeUserPathwayAssignment(userId: string, pathwayId: number): Promise<void>;
-  
+
   // Combined operations
   getModuleWithProgress(moduleId: number, userId: string): Promise<ModuleWithProgress | undefined>;
   getModulesWithProgress(userId: string): Promise<ModuleWithProgress[]>;
   getUserAssignedPathways(userId: string): Promise<TrainingPathwayWithModules[]>;
-  
+
   // Step-based module operations
   getModuleSteps(moduleId: number): Promise<ModuleStep[]>;
   getModuleStep(stepId: number): Promise<ModuleStep | undefined>;
@@ -168,24 +169,24 @@ export interface IStorage {
   updateModuleStep(stepId: number, step: Partial<InsertModuleStep>): Promise<ModuleStep | undefined>;
   deleteModuleStep(stepId: number): Promise<void>;
   deleteModuleStepsByModuleId(moduleId: number): Promise<void>;
-  
+
   // Step content block operations
   getStepContentBlocks(stepId: number): Promise<StepContentBlock[]>;
   createStepContentBlock(block: InsertStepContentBlock): Promise<StepContentBlock>;
   updateStepContentBlock(id: number, block: Partial<InsertStepContentBlock>): Promise<StepContentBlock | undefined>;
   deleteStepContentBlock(id: number): Promise<void>;
   deleteStepContentBlocksByStepId(stepId: number): Promise<void>;
-  
+
   // Step checkpoint operations
   getStepCheckpoint(stepId: number): Promise<StepCheckpoint | undefined>;
   createOrUpdateStepCheckpoint(checkpoint: InsertStepCheckpoint): Promise<StepCheckpoint>;
   deleteStepCheckpoint(stepId: number): Promise<void>;
-  
+
   // User step progress operations
   getUserStepProgress(userId: string, stepId: number): Promise<UserStepProgress | undefined>;
   getUserModuleProgress(userId: string, moduleId: number): Promise<UserStepProgress[]>;
   submitStepCheckpoint(userId: string, stepId: number, selectedAnswerIndex: number): Promise<{ correct: boolean; unlockNext: boolean }>;
-  
+
   // Step-based module with progress
   getModuleWithSteps(moduleId: number, userId: string): Promise<ModuleWithSteps | undefined>;
 }
@@ -194,6 +195,11 @@ export class DatabaseStorage implements IStorage {
   // User operations
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
     return user;
   }
 
@@ -209,7 +215,7 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return user;
     }
-    
+
     // Check if user exists by email (for unique constraint)
     if (userData.email) {
       const [existingByEmail] = await db.select().from(users).where(eq(users.email, userData.email));
@@ -223,7 +229,7 @@ export class DatabaseStorage implements IStorage {
         return user;
       }
     }
-    
+
     // Create new user
     const [user] = await db.insert(users).values(userData).returning();
     return user;
@@ -241,16 +247,16 @@ export class DatabaseStorage implements IStorage {
   async getUsersWithProgress(): Promise<UserWithProgress[]> {
     const allUsers = await this.getAllUsers();
     const result: UserWithProgress[] = [];
-    
+
     for (const user of allUsers) {
       const attempts = await this.getAttempts(user.id);
       const passedAttempts = attempts.filter(a => a.passed);
       const uniqueCompletedModules = new Set(passedAttempts.map(a => a.moduleId));
-      const avgScore = attempts.length > 0 
+      const avgScore = attempts.length > 0
         ? Math.round(attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length)
         : 0;
       const userGroups = await this.getUserGroups(user.id);
-      
+
       result.push({
         ...user,
         completedModules: uniqueCompletedModules.size,
@@ -259,22 +265,22 @@ export class DatabaseStorage implements IStorage {
         groups: userGroups,
       });
     }
-    
+
     return result;
   }
 
   async getUserWithProgress(userId: string): Promise<UserWithProgress | undefined> {
     const user = await this.getUser(userId);
     if (!user) return undefined;
-    
+
     const attempts = await this.getAttempts(userId);
     const passedAttempts = attempts.filter(a => a.passed);
     const uniqueCompletedModules = new Set(passedAttempts.map(a => a.moduleId));
-    const avgScore = attempts.length > 0 
+    const avgScore = attempts.length > 0
       ? Math.round(attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length)
       : 0;
     const userGroupsList = await this.getUserGroups(userId);
-    
+
     return {
       ...user,
       completedModules: uniqueCompletedModules.size,
@@ -459,7 +465,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAttemptsByUser(userId: string): Promise<QuizAttemptWithDetails[]> {
     const attempts = await db.select().from(quizAttempts).where(eq(quizAttempts.userId, userId)).orderBy(desc(quizAttempts.createdAt));
-    
+
     const result: QuizAttemptWithDetails[] = [];
     for (const attempt of attempts) {
       const user = await this.getUser(attempt.userId);
@@ -472,7 +478,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAttemptsByModule(moduleId: number): Promise<QuizAttemptWithDetails[]> {
     const attempts = await db.select().from(quizAttempts).where(eq(quizAttempts.moduleId, moduleId)).orderBy(desc(quizAttempts.createdAt));
-    
+
     const result: QuizAttemptWithDetails[] = [];
     for (const attempt of attempts) {
       const user = await this.getUser(attempt.userId);
@@ -485,7 +491,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAllAttempts(): Promise<QuizAttemptWithDetails[]> {
     const attempts = await db.select().from(quizAttempts).orderBy(desc(quizAttempts.createdAt));
-    
+
     const result: QuizAttemptWithDetails[] = [];
     for (const attempt of attempts) {
       const user = await this.getUser(attempt.userId);
@@ -498,7 +504,7 @@ export class DatabaseStorage implements IStorage {
 
   async getRecentAttempts(limit: number): Promise<QuizAttemptWithDetails[]> {
     const attempts = await db.select().from(quizAttempts).orderBy(desc(quizAttempts.createdAt)).limit(limit);
-    
+
     const result: QuizAttemptWithDetails[] = [];
     for (const attempt of attempts) {
       const user = await this.getUser(attempt.userId);
@@ -549,7 +555,7 @@ export class DatabaseStorage implements IStorage {
   async getGroupsWithMembers(): Promise<UserGroupWithMembers[]> {
     const groups = await this.getGroups();
     const result: UserGroupWithMembers[] = [];
-    
+
     for (const group of groups) {
       const members = await this.getGroupMembers(group.id);
       result.push({
@@ -558,7 +564,7 @@ export class DatabaseStorage implements IStorage {
         memberCount: members.length,
       });
     }
-    
+
     return result;
   }
 
@@ -570,7 +576,7 @@ export class DatabaseStorage implements IStorage {
   async getGroupWithMembers(id: number): Promise<UserGroupWithMembers | undefined> {
     const group = await this.getGroup(id);
     if (!group) return undefined;
-    
+
     const members = await this.getGroupMembers(id);
     return {
       ...group,
@@ -601,12 +607,12 @@ export class DatabaseStorage implements IStorage {
   async getGroupMembers(groupId: number): Promise<(GroupMember & { user?: User })[]> {
     const members = await db.select().from(groupMembers).where(eq(groupMembers.groupId, groupId));
     const result: (GroupMember & { user?: User })[] = [];
-    
+
     for (const member of members) {
       const user = await this.getUser(member.userId);
       result.push({ ...member, user });
     }
-    
+
     return result;
   }
 
@@ -624,7 +630,7 @@ export class DatabaseStorage implements IStorage {
   async getUserGroups(userId: string): Promise<UserGroup[]> {
     const memberships = await db.select().from(groupMembers).where(eq(groupMembers.userId, userId));
     if (memberships.length === 0) return [];
-    
+
     const groupIds = memberships.map(m => m.groupId);
     return db.select().from(userGroups).where(inArray(userGroups.id, groupIds));
   }
@@ -637,7 +643,7 @@ export class DatabaseStorage implements IStorage {
   async getPathwaysWithModules(): Promise<TrainingPathwayWithModules[]> {
     const pathways = await this.getPathways();
     const result: TrainingPathwayWithModules[] = [];
-    
+
     for (const pathway of pathways) {
       const pathwayMods = await this.getPathwayModules(pathway.id);
       result.push({
@@ -646,7 +652,7 @@ export class DatabaseStorage implements IStorage {
         moduleCount: pathwayMods.length,
       });
     }
-    
+
     return result;
   }
 
@@ -658,7 +664,7 @@ export class DatabaseStorage implements IStorage {
   async getPathwayWithModules(id: number): Promise<TrainingPathwayWithModules | undefined> {
     const pathway = await this.getPathway(id);
     if (!pathway) return undefined;
-    
+
     const pathwayMods = await this.getPathwayModules(id);
     return {
       ...pathway,
@@ -695,13 +701,13 @@ export class DatabaseStorage implements IStorage {
     const pathwayMods = await db.select().from(pathwayModules)
       .where(eq(pathwayModules.pathwayId, pathwayId))
       .orderBy(pathwayModules.order);
-    
+
     const result: (PathwayModule & { module?: Module })[] = [];
     for (const pm of pathwayMods) {
       const module = await this.getModule(pm.moduleId);
       result.push({ ...pm, module });
     }
-    
+
     return result;
   }
 
@@ -786,13 +792,13 @@ export class DatabaseStorage implements IStorage {
   async getModulesWithProgress(userId: string): Promise<ModuleWithProgress[]> {
     // Get user's assigned pathways (direct and via groups)
     const assignedPathways = await this.getUserAssignedPathways(userId);
-    
+
     // Users only see modules from assigned pathways
     // No assignments = no modules visible
     if (assignedPathways.length === 0) {
       return [];
     }
-    
+
     // Collect unique module IDs from all assigned pathways
     const assignedModuleIds = new Set<number>();
     for (const pathway of assignedPathways) {
@@ -804,15 +810,15 @@ export class DatabaseStorage implements IStorage {
         }
       }
     }
-    
+
     // Get modules with progress for assigned modules only
     const result: ModuleWithProgress[] = [];
     for (const moduleId of Array.from(assignedModuleIds)) {
       const mod = await this.getModule(moduleId);
       if (!mod || !mod.published) continue;
-      
+
       const lastAttempt = await this.getLastAttempt(userId, moduleId);
-      
+
       let status: 'not_started' | 'in_progress' | 'completed' = 'not_started';
       if (lastAttempt?.passed) {
         status = 'completed';
@@ -835,7 +841,7 @@ export class DatabaseStorage implements IStorage {
   async getUserAssignedPathways(userId: string): Promise<TrainingPathwayWithModules[]> {
     // Get direct user assignments
     const directAssignments = await this.getUserPathwayAssignments(userId);
-    
+
     // Get group assignments
     const userGroupsList = await this.getUserGroups(userId);
     const groupPathwayIds: number[] = [];
@@ -843,13 +849,13 @@ export class DatabaseStorage implements IStorage {
       const groupAssignments = await this.getGroupPathwayAssignments(group.id);
       groupPathwayIds.push(...groupAssignments.map(a => a.pathwayId));
     }
-    
+
     // Combine unique pathway IDs
     const allPathwayIds = Array.from(new Set([
       ...directAssignments.map(a => a.pathwayId),
       ...groupPathwayIds,
     ]));
-    
+
     // Get full pathway details (no published filter - assigned pathways are always visible)
     const result: TrainingPathwayWithModules[] = [];
     for (const pathwayId of allPathwayIds) {
@@ -858,7 +864,7 @@ export class DatabaseStorage implements IStorage {
         result.push(pathway);
       }
     }
-    
+
     return result;
   }
 
@@ -968,7 +974,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     const correct = selectedAnswerIndex === checkpoint.correctOptionIndex;
-    
+
     // Check if progress already exists
     const existingProgress = await this.getUserStepProgress(userId, stepId);
     if (existingProgress) {

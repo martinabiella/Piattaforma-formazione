@@ -25,7 +25,7 @@ export function Header() {
               <UserMenu />
             ) : (
               <Button asChild data-testid="button-login">
-                <a href="/api/login">Log in</a>
+                <Link href="/auth">Log in</Link>
               </Button>
             )
           )}

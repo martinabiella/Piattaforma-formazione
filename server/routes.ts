@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, isAdmin } from "./replitAuth";
+import { setupAuth, isAuthenticated, isAdmin } from "./auth";
 import { z } from "zod";
 import {
   insertModuleSchema,
@@ -47,13 +47,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       const moduleId = parseInt(req.params.id);
-      
+
       if (isNaN(moduleId)) {
         return res.status(400).json({ message: "Invalid module ID" });
       }
 
       const module = await storage.getModuleWithProgress(moduleId, userId);
-      
+
       if (!module) {
         return res.status(404).json({ message: "Module not found" });
       }
@@ -112,7 +112,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           correct++;
         }
       }
-      
+
       const quizScore = Math.round((correct / questions.length) * 100);
 
       // Calculate inline score if inline answers provided
@@ -164,13 +164,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       const moduleId = parseInt(req.params.id);
-      
+
       if (isNaN(moduleId)) {
         return res.status(400).json({ message: "Invalid module ID" });
       }
 
       const moduleWithSteps = await storage.getModuleWithSteps(moduleId, userId);
-      
+
       if (!moduleWithSteps) {
         return res.status(404).json({ message: "Module not found" });
       }
@@ -196,7 +196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const stepId = parseInt(req.params.stepId);
       const { selectedAnswerIndex } = req.body;
-      
+
       if (isNaN(stepId)) {
         return res.status(400).json({ message: "Invalid step ID" });
       }
@@ -224,10 +224,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const result = await storage.submitStepCheckpoint(userId, stepId, selectedAnswerIndex);
-      
+
       // Get checkpoint to include correct answer info
       const checkpoint = await storage.getStepCheckpoint(stepId);
-      
+
       res.json({
         ...result,
         correctAnswerIndex: checkpoint?.correctOptionIndex,
@@ -348,10 +348,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const module = await storage.createModule(result.data);
-      
+
       // Create empty quiz for the module
       await storage.createOrUpdateQuiz(module.id, 70);
-      
+
       res.status(201).json(module);
     } catch (error) {
       console.error("Error creating module:", error);
@@ -411,7 +411,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Delete existing sections that are not in the new list
       const existingIds = sections.filter((s: any) => s.id).map((s: any) => s.id);
       const allSections = await storage.getSections(moduleId);
-      
+
       for (const section of allSections) {
         if (!existingIds.includes(section.id)) {
           await storage.deleteSection(section.id);
@@ -464,7 +464,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Delete existing blocks that are not in the new list
       const existingIds = blocks.filter((b: any) => b.id).map((b: any) => b.id);
       const allBlocks = await storage.getContentBlocks(moduleId);
-      
+
       for (const block of allBlocks) {
         if (!existingIds.includes(block.id)) {
           await storage.deleteContentBlock(block.id);
@@ -513,7 +513,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { passingScore, questions } = req.body;
-      
+
       if (typeof passingScore !== "number" || passingScore < 1 || passingScore > 100) {
         return res.status(400).json({ message: "Invalid passing score" });
       }
@@ -528,7 +528,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Delete existing questions that are not in the new list
       const existingIds = questions.filter((q: any) => q.id).map((q: any) => q.id);
       const allQuestions = await storage.getQuestions(quiz.id);
-      
+
       for (const question of allQuestions) {
         if (!existingIds.includes(question.id)) {
           await storage.deleteQuestion(question.id);
@@ -591,7 +591,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const steps = await storage.getModuleSteps(moduleId);
-      
+
       // Get content blocks and checkpoints for each step
       const stepsWithDetails = await Promise.all(
         steps.map(async (step) => {
@@ -642,14 +642,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const stepData = steps[i];
         const step = stepData.id && existingStepIds.has(stepData.id)
           ? await storage.updateModuleStep(stepData.id, {
-              title: stepData.title,
-              order: i + 1,
-            })
+            title: stepData.title,
+            order: i + 1,
+          })
           : await storage.createModuleStep({
-              moduleId,
-              title: stepData.title,
-              order: i + 1,
-            });
+            moduleId,
+            title: stepData.title,
+            order: i + 1,
+          });
 
         if (!step) continue;
 
@@ -674,18 +674,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const blockData = contentBlocks[j];
           const block = blockData.id && existingBlockIds.has(blockData.id)
             ? await storage.updateStepContentBlock(blockData.id, {
-                blockType: blockData.blockType || 'text',
-                content: blockData.content || null,
-                imageUrl: blockData.imageUrl || null,
-                order: j + 1,
-              })
+              blockType: blockData.blockType || 'text',
+              content: blockData.content || null,
+              imageUrl: blockData.imageUrl || null,
+              order: j + 1,
+            })
             : await storage.createStepContentBlock({
-                stepId: step.id,
-                blockType: blockData.blockType || 'text',
-                content: blockData.content || null,
-                imageUrl: blockData.imageUrl || null,
-                order: j + 1,
-              });
+              stepId: step.id,
+              blockType: blockData.blockType || 'text',
+              content: blockData.content || null,
+              imageUrl: blockData.imageUrl || null,
+              order: j + 1,
+            });
           if (block) resultBlocks.push(block);
         }
 
@@ -735,7 +735,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.params.id;
       const user = await storage.getUserWithProgress(userId);
-      
+
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -935,7 +935,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const pathway = await storage.createPathway(result.data);
-      
+
       // Add modules to the pathway if moduleIds are provided
       const { moduleIds } = req.body;
       if (Array.isArray(moduleIds) && moduleIds.length > 0) {
@@ -947,7 +947,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       }
-      
+
       // Return the pathway with modules
       const pathwayWithModules = await storage.getPathwayWithModules(pathway.id);
       res.status(201).json(pathwayWithModules);
@@ -1096,7 +1096,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const pathwayId = parseInt(req.params.id);
       const groupId = parseInt(req.params.groupId);
-      
+
       if (isNaN(pathwayId) || isNaN(groupId)) {
         return res.status(400).json({ message: "Invalid IDs" });
       }
@@ -1113,7 +1113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/admin/pathways/:id/assign-user/:userId", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const pathwayId = parseInt(req.params.id);
-      
+
       if (isNaN(pathwayId)) {
         return res.status(400).json({ message: "Invalid pathway ID" });
       }

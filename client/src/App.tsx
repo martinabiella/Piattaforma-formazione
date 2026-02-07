@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 
+import AuthPage from "@/pages/auth";
 import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
 import ModuleContent from "@/pages/module-content";
@@ -25,26 +26,20 @@ import AdminGroups from "@/pages/admin/groups";
 import AdminPathways from "@/pages/admin/pathways";
 import NotFound from "@/pages/not-found";
 
-function ProtectedRoute({ 
-  children, 
-  requireAdmin = false 
-}: { 
+function ProtectedRoute({
+  children,
+  requireAdmin = false
+}: {
   children: React.ReactNode;
   requireAdmin?: boolean;
 }) {
   const { isAuthenticated, isLoading, isAdmin } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      toast({
-        title: "Authentication Required",
-        description: "Please log in to access this page.",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
+      setLocation("/auth");
     } else if (!isLoading && requireAdmin && !isAdmin) {
       toast({
         title: "Access Denied",
@@ -52,10 +47,10 @@ function ProtectedRoute({
         variant: "destructive",
       });
       setTimeout(() => {
-        window.location.href = "/app";
+        setLocation("/app");
       }, 500);
     }
-  }, [isAuthenticated, isLoading, isAdmin, requireAdmin, toast]);
+  }, [isAuthenticated, isLoading, isAdmin, requireAdmin, toast, setLocation]);
 
   if (isLoading) {
     return (
@@ -87,91 +82,93 @@ function Router() {
       <Route path="/">
         {isLoading || !isAuthenticated ? <Landing /> : <Dashboard />}
       </Route>
-      
+
+      <Route path="/auth" component={AuthPage} />
+
       <Route path="/app">
         <ProtectedRoute>
           <Dashboard />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/app/modules/:id">
         <ProtectedRoute>
           <ModuleContent />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/app/modules/:id/learn">
         <ProtectedRoute>
           <ModuleSteps />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/app/modules/:id/quiz">
         <ProtectedRoute>
           <Quiz />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/admin">
         <ProtectedRoute requireAdmin>
           <AdminDashboard />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/admin/modules">
         <ProtectedRoute requireAdmin>
           <AdminModules />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/admin/modules/:id/edit">
         <ProtectedRoute requireAdmin>
           <ModuleEditor />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/admin/modules/:id/builder">
         <ProtectedRoute requireAdmin>
           <ModuleBuilder />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/admin/modules/:id/steps/edit">
         <ProtectedRoute requireAdmin>
           <StepEditor />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/admin/modules/:id/quiz/edit">
         <ProtectedRoute requireAdmin>
           <QuizEditor />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/admin/results">
         <ProtectedRoute requireAdmin>
           <AdminResults />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/admin/users">
         <ProtectedRoute requireAdmin>
           <AdminUsers />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/admin/groups">
         <ProtectedRoute requireAdmin>
           <AdminGroups />
         </ProtectedRoute>
       </Route>
-      
+
       <Route path="/admin/pathways">
         <ProtectedRoute requireAdmin>
           <AdminPathways />
         </ProtectedRoute>
       </Route>
-      
+
       <Route component={NotFound} />
     </Switch>
   );
