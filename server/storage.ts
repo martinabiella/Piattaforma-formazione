@@ -259,7 +259,8 @@ export class DatabaseStorage implements IStorage {
 
       result.push({
         ...user,
-        completedModules: uniqueCompletedModules.size,
+        modulesCompleted: uniqueCompletedModules.size,
+        totalModules: await this.getPublishedModules().then(m => m.length),
         totalAttempts: attempts.length,
         averageScore: avgScore,
         groups: userGroups,
@@ -281,9 +282,11 @@ export class DatabaseStorage implements IStorage {
       : 0;
     const userGroupsList = await this.getUserGroups(userId);
 
+    const totalModules = await this.getPublishedModules().then(m => m.length);
     return {
       ...user,
-      completedModules: uniqueCompletedModules.size,
+      modulesCompleted: uniqueCompletedModules.size,
+      totalModules,
       totalAttempts: attempts.length,
       averageScore: avgScore,
       groups: userGroupsList,
@@ -789,7 +792,29 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getModulesWithProgress(userId: string): Promise<ModuleWithProgress[]> {
+  async getModulesWithProgress(userId: string, isAdmin: boolean = false): Promise<ModuleWithProgress[]> {
+    // Admin users see all published modules
+    if (isAdmin) {
+      const allPublishedModules = await this.getPublishedModules();
+      const result: ModuleWithProgress[] = [];
+      for (const mod of allPublishedModules) {
+        const lastAttempt = await this.getLastAttempt(userId, mod.id);
+        let status: 'not_started' | 'in_progress' | 'completed' = 'not_started';
+        if (lastAttempt?.passed) {
+          status = 'completed';
+        } else if (lastAttempt) {
+          status = 'in_progress';
+        }
+        result.push({
+          ...mod,
+          status,
+          lastAttemptScore: lastAttempt?.score,
+        });
+      }
+      result.sort((a, b) => a.order - b.order);
+      return result;
+    }
+
     // Get user's assigned pathways (direct and via groups)
     const assignedPathways = await this.getUserAssignedPathways(userId);
 

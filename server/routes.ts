@@ -19,7 +19,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const user = await storage.getUser(userId);
       res.json(user);
     } catch (error) {
@@ -33,8 +33,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get published modules with user progress
   app.get("/api/modules", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const modules = await storage.getModulesWithProgress(userId);
+      const userId = req.user.id;
+      const userRole = req.user.role;
+      const modules = await storage.getModulesWithProgress(userId, userRole === "admin");
       res.json(modules);
     } catch (error) {
       console.error("Error fetching modules:", error);
@@ -45,7 +46,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get single module with full details
   app.get("/api/modules/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const moduleId = parseInt(req.params.id);
 
       if (isNaN(moduleId)) {
@@ -76,7 +77,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get user's assigned pathways
   app.get("/api/pathways", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const pathways = await storage.getUserAssignedPathways(userId);
       res.json(pathways);
     } catch (error) {
@@ -88,7 +89,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Submit quiz attempt (with inline answers support)
   app.post("/api/quiz-attempts", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const { moduleId, quizId, answers, inlineAnswers } = req.body;
 
       if (!moduleId || !quizId || !Array.isArray(answers)) {
@@ -162,7 +163,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get module with steps (step-based learning)
   app.get("/api/modules/:id/steps", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const moduleId = parseInt(req.params.id);
 
       if (isNaN(moduleId)) {
@@ -193,7 +194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Submit step checkpoint answer
   app.post("/api/steps/:stepId/checkpoint", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const stepId = parseInt(req.params.stepId);
       const { selectedAnswerIndex } = req.body;
 

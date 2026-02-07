@@ -1,3 +1,5 @@
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -9,11 +11,25 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { LogOut, Settings, Shield } from "lucide-react";
+import { LogOut, Shield } from "lucide-react";
 import { Link } from "wouter";
 
 export function UserMenu() {
   const { user, isAdmin } = useAuth();
+  const { toast } = useToast();
+
+  const handleLogout = async () => {
+    try {
+      await apiRequest("POST", "/api/logout");
+      window.location.href = "/auth";
+    } catch (error) {
+      toast({
+        title: "Logout failed",
+        description: "Please try again",
+        variant: "destructive",
+      });
+    }
+  };
 
   if (!user) return null;
 
@@ -58,11 +74,9 @@ export function UserMenu() {
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuItem asChild>
-          <a href="/api/logout" className="flex items-center cursor-pointer" data-testid="link-logout">
-            <LogOut className="mr-2 h-4 w-4" />
-            <span>Log out</span>
-          </a>
+        <DropdownMenuItem onClick={handleLogout} className="flex items-center cursor-pointer" data-testid="button-logout">
+          <LogOut className="mr-2 h-4 w-4" />
+          <span>Log out</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -546,7 +546,8 @@ export type TrainingPathwayWithModules = TrainingPathway & {
 };
 
 export type UserWithProgress = User & {
-  completedModules?: number;
+  modulesCompleted?: number;
+  totalModules?: number;
   totalAttempts?: number;
   averageScore?: number;
   groups?: UserGroup[];
