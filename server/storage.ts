@@ -1102,7 +1102,8 @@ export class DatabaseStorage implements IStorage {
       stepsWithProgress.push({
         ...step,
         contentBlocks,
-        checkpoint: isUnlocked ? checkpoints[0] : undefined, // Hide checkpoint if locked (first checkpoint for now)
+        checkpoint: isUnlocked && checkpoints.length > 0 ? checkpoints[0] : undefined, // First checkpoint for backward compatibility
+        checkpoints: isUnlocked ? checkpoints : [], // All checkpoints for new multiple-question UI
         isUnlocked,
         isCompleted,
         userAnswer: progress?.selectedAnswerIndex ?? undefined,

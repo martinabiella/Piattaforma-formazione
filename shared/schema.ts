@@ -575,6 +575,7 @@ export type InlineAnswer = {
 export type StepWithContent = ModuleStep & {
   contentBlocks: StepContentBlock[];
   checkpoint?: StepCheckpoint;
+  checkpoints?: StepCheckpoint[]; // Array of all checkpoints for multiple questions
 };
 
 export type StepWithProgress = StepWithContent & {

@@ -72,7 +72,7 @@ function Checkpoint({ step, onAnswer, isPending }: CheckpointProps) {
           {options.map((option, index) => {
             const isSelected = selected === index;
             const isCorrectOption = index === checkpoint.correctOptionIndex;
-            
+
             let optionStyles = "cursor-pointer hover-elevate";
             if (showResult) {
               if (isCorrectOption) {
@@ -113,8 +113,8 @@ function Checkpoint({ step, onAnswer, isPending }: CheckpointProps) {
         </div>
 
         {!showResult && (
-          <Button 
-            onClick={handleSubmit} 
+          <Button
+            onClick={handleSubmit}
             disabled={selected === null || isPending}
             className="w-full"
             data-testid={`button-submit-checkpoint-${step.id}`}
@@ -156,14 +156,14 @@ function Checkpoint({ step, onAnswer, isPending }: CheckpointProps) {
   );
 }
 
-function StepNavItem({ 
-  step, 
-  index, 
-  isCurrent, 
-  onClick 
-}: { 
-  step: StepWithProgress; 
-  index: number; 
+function StepNavItem({
+  step,
+  index,
+  isCurrent,
+  onClick
+}: {
+  step: StepWithProgress;
+  index: number;
   isCurrent: boolean;
   onClick: () => void;
 }) {
@@ -331,9 +331,9 @@ export default function ModuleSteps() {
       <div className="min-h-screen bg-background">
         <Header />
         <main className="max-w-5xl mx-auto px-4 md:px-6 py-8">
-          <Button 
-            variant="ghost" 
-            asChild 
+          <Button
+            variant="ghost"
+            asChild
             className="mb-6 -ml-2"
           >
             <Link href="/app" className="flex items-center gap-2">
@@ -359,7 +359,7 @@ export default function ModuleSteps() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="max-w-6xl mx-auto px-4 md:px-6 py-8">
         <Breadcrumb className="mb-6">
           <BreadcrumbList>
@@ -375,9 +375,9 @@ export default function ModuleSteps() {
           </BreadcrumbList>
         </Breadcrumb>
 
-        <Button 
-          variant="ghost" 
-          asChild 
+        <Button
+          variant="ghost"
+          asChild
           className="mb-6 -ml-2"
           data-testid="button-back"
         >
@@ -434,8 +434,8 @@ export default function ModuleSteps() {
                   </Badge>
                   {currentStep?.isCompleted && (
                     <Badge variant="outline" className={cn(
-                      currentStep.wasCorrect 
-                        ? "border-emerald-500 text-emerald-600" 
+                      currentStep.wasCorrect
+                        ? "border-emerald-500 text-emerald-600"
                         : "border-amber-500 text-amber-600"
                     )}>
                       {currentStep.wasCorrect ? "Answered Correctly" : "Answered"}
@@ -458,15 +458,15 @@ export default function ModuleSteps() {
                   <div key={block.id} data-testid={`content-block-${block.id}`}>
                     {block.imageUrl && (
                       <div className="mb-4 rounded-lg overflow-hidden">
-                        <img 
-                          src={block.imageUrl} 
+                        <img
+                          src={block.imageUrl}
                           alt="Step content"
                           className="w-full h-auto max-h-80 object-cover"
                         />
                       </div>
                     )}
                     {block.content && (
-                      <div 
+                      <div
                         className="prose prose-lg dark:prose-invert max-w-none"
                         dangerouslySetInnerHTML={{ __html: block.content }}
                       />
@@ -474,11 +474,24 @@ export default function ModuleSteps() {
                   </div>
                 ))}
 
-                {/* Checkpoint question */}
-                {currentStep?.checkpoint && currentStep.isUnlocked && (
+                {/* Checkpoint questions */}
+                {currentStep?.checkpoints && currentStep.checkpoints.length > 0 && currentStep.isUnlocked && (
+                  <div className="mt-8 pt-6 border-t space-y-6">
+                    {currentStep.checkpoints.map((checkpoint, index) => (
+                      <Checkpoint
+                        key={checkpoint.id || index}
+                        step={{ ...currentStep, checkpoint }}
+                        onAnswer={handleCheckpointAnswer}
+                        isPending={submitCheckpoint.isPending}
+                      />
+                    ))}
+                  </div>
+                )}
+                {/* Fallback for old checkpoint format */}
+                {(!currentStep?.checkpoints || currentStep.checkpoints.length === 0) && currentStep?.checkpoint && currentStep.isUnlocked && (
                   <div className="mt-8 pt-6 border-t">
-                    <Checkpoint 
-                      step={currentStep} 
+                    <Checkpoint
+                      step={currentStep}
                       onAnswer={handleCheckpointAnswer}
                       isPending={submitCheckpoint.isPending}
                     />

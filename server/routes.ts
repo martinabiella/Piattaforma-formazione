@@ -697,22 +697,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Handle checkpoints (multiple per step)
         let checkpoints: any[] = [];
-        if (stepData.checkpoint) {
-          // Legacy: single checkpoint format
-          const cp = stepData.checkpoint;
-          if (cp.question && Array.isArray(cp.options) && cp.options.length >= 2) {
-            const checkpoint = await storage.createStepCheckpoint({
-              stepId: step.id,
-              question: cp.question,
-              options: cp.options,
-              correctOptionIndex: cp.correctOptionIndex ?? 0,
-              explanation: cp.explanation || null,
-              order: 1,
-            });
-            checkpoints.push(checkpoint);
-          }
-        } else if (stepData.checkpoints && Array.isArray(stepData.checkpoints)) {
-          // New: multiple checkpoints format
+        if (stepData.checkpoints && Array.isArray(stepData.checkpoints) && stepData.checkpoints.length > 0) {
+          // New: multiple checkpoints format - delete existing and recreate
           await storage.deleteStepCheckpointsByStepId(step.id);
           for (let k = 0; k < stepData.checkpoints.length; k++) {
             const cp = stepData.checkpoints[k];
@@ -728,10 +714,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
               checkpoints.push(checkpoint);
             }
           }
-        } else {
-          // Remove checkpoints if not provided
+        } else if (stepData.checkpoint) {
+          // Legacy: single checkpoint format - delete existing and recreate
           await storage.deleteStepCheckpointsByStepId(step.id);
+          const cp = stepData.checkpoint;
+          if (cp.question && Array.isArray(cp.options) && cp.options.length >= 2) {
+            const checkpoint = await storage.createStepCheckpoint({
+              stepId: step.id,
+              question: cp.question,
+              options: cp.options,
+              correctOptionIndex: cp.correctOptionIndex ?? 0,
+              explanation: cp.explanation || null,
+              order: 1,
+            });
+            checkpoints.push(checkpoint);
+          }
         }
+        // If neither checkpoints nor checkpoint is provided with content, preserve existing checkpoints
 
         resultSteps.push({ ...step, contentBlocks: resultBlocks, checkpoints });
       }
