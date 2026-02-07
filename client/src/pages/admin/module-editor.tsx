@@ -21,10 +21,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { 
-  Save, 
-  Plus, 
-  Trash2, 
+import {
+  Save,
+  Plus,
+  Trash2,
   GripVertical,
   ImageIcon,
   ArrowLeft
@@ -91,8 +91,8 @@ function SectionEditor({
               Section {index + 1}
             </span>
           </div>
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="icon"
             onClick={onRemove}
             data-testid={`button-remove-section-${index}`}
@@ -112,7 +112,7 @@ function SectionEditor({
             data-testid={`input-section-title-${index}`}
           />
         </div>
-        
+
         <div className="space-y-2">
           <Label htmlFor={`section-content-${index}`}>Content (HTML)</Label>
           <Textarea
@@ -128,7 +128,7 @@ function SectionEditor({
             You can use HTML tags like &lt;p&gt;, &lt;h3&gt;, &lt;ul&gt;, &lt;strong&gt;, etc.
           </p>
         </div>
-        
+
         <div className="space-y-2">
           <Label htmlFor={`section-image-${index}`}>Image URL (optional)</Label>
           <div className="flex gap-2">
@@ -146,9 +146,9 @@ function SectionEditor({
           </div>
           {section.imageUrl && (
             <div className="mt-2 rounded-lg overflow-hidden border max-w-xs">
-              <img 
-                src={section.imageUrl} 
-                alt="Preview" 
+              <img
+                src={section.imageUrl}
+                alt="Preview"
                 className="w-full h-auto max-h-32 object-cover"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = 'none';
@@ -166,7 +166,7 @@ export default function ModuleEditor() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  
+
   const isNew = id === "new";
 
   const [title, setTitle] = useState("");
@@ -299,13 +299,13 @@ export default function ModuleEditor() {
   }
 
   return (
-    <AdminLayout 
-      title={isNew ? "Create Module" : "Edit Module"} 
+    <AdminLayout
+      title={isNew ? "Create Module" : "Edit Module"}
       breadcrumbs={breadcrumbs}
     >
       <div className="flex items-center justify-between gap-4 mb-6">
-        <Button 
-          variant="ghost" 
+        <Button
+          variant="ghost"
           asChild
           data-testid="button-back"
         >
@@ -314,8 +314,8 @@ export default function ModuleEditor() {
             Back to Modules
           </Link>
         </Button>
-        
-        <Button 
+
+        <Button
           onClick={() => saveMutation.mutate()}
           disabled={saveMutation.isPending || !title.trim()}
           data-testid="button-save-module"
@@ -342,7 +342,7 @@ export default function ModuleEditor() {
                 data-testid="input-module-title"
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <Textarea
@@ -354,7 +354,7 @@ export default function ModuleEditor() {
                 data-testid="textarea-module-description"
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="imageUrl">Cover Image URL</Label>
               <div className="flex gap-2">
@@ -372,9 +372,9 @@ export default function ModuleEditor() {
               </div>
               {imageUrl && (
                 <div className="mt-2 rounded-lg overflow-hidden border max-w-xs">
-                  <img 
-                    src={imageUrl} 
-                    alt="Cover preview" 
+                  <img
+                    src={imageUrl}
+                    alt="Cover preview"
                     className="w-full h-auto max-h-32 object-cover"
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';
@@ -383,7 +383,7 @@ export default function ModuleEditor() {
                 </div>
               )}
             </div>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="order">Display Order</Label>
@@ -396,7 +396,7 @@ export default function ModuleEditor() {
                   data-testid="input-module-order"
                 />
               </div>
-              
+
               <div className="flex items-center justify-between space-x-2 pt-6">
                 <Label htmlFor="published">Published</Label>
                 <Switch
@@ -410,45 +410,7 @@ export default function ModuleEditor() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <CardTitle>Content Sections</CardTitle>
-                <CardDescription>Add and organize module content</CardDescription>
-              </div>
-              <Button onClick={handleAddSection} variant="outline" data-testid="button-add-section">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Section
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {sections.length === 0 ? (
-              <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                <p className="text-muted-foreground mb-4" data-testid="text-no-sections">
-                  No sections yet. Add your first section to start building content.
-                </p>
-                <Button onClick={handleAddSection} variant="outline" data-testid="button-add-first-section">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Section
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {sections.map((section, index) => (
-                  <SectionEditor
-                    key={index}
-                    section={section}
-                    index={index}
-                    onChange={(data) => handleUpdateSection(index, data)}
-                    onRemove={() => handleRemoveSection(index)}
-                  />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* Content is now managed via Module Builder - see /admin/modules/:id/builder */}
 
         {!isNew && (
           <Card>

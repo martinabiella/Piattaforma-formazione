@@ -246,7 +246,9 @@ export function setupAuth(app: Express) {
 
     app.get("/api/auth/user", (req, res) => {
         if (req.isAuthenticated()) {
-            res.json(req.user);
+            // Strip password from response for security
+            const { password, ...userWithoutPassword } = req.user as any;
+            res.json(userWithoutPassword);
         } else {
             res.status(401).json({ message: "Unauthorized" });
         }

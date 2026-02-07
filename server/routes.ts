@@ -227,7 +227,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await storage.submitStepCheckpoint(userId, stepId, selectedAnswerIndex);
 
       // Get checkpoint to include correct answer info
-      const checkpoint = await storage.getStepCheckpoint(stepId);
+      const checkpoints = await storage.getStepCheckpoints(stepId);
+      const checkpoint = checkpoints[0];
 
       res.json({
         ...result,
@@ -396,6 +397,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // @deprecated - Use /api/admin/modules/:id/steps instead
   // Update module sections (admin)
   app.put("/api/admin/modules/:id/sections", isAuthenticated, isAdmin, async (req, res) => {
     try {
@@ -449,6 +451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // @deprecated - Use /api/admin/modules/:id/steps instead
   // Update module content blocks (admin)
   app.put("/api/admin/modules/:id/content-blocks", isAuthenticated, isAdmin, async (req, res) => {
     try {
@@ -597,8 +600,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stepsWithDetails = await Promise.all(
         steps.map(async (step) => {
           const contentBlocks = await storage.getStepContentBlocks(step.id);
-          const checkpoint = await storage.getStepCheckpoint(step.id);
-          return { ...step, contentBlocks, checkpoint };
+          const checkpoints = await storage.getStepCheckpoints(step.id);
+          return { ...step, contentBlocks, checkpoints };
         })
       );
 
@@ -692,25 +695,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (block) resultBlocks.push(block);
         }
 
-        // Handle checkpoint
-        let checkpoint = null;
+        // Handle checkpoints (multiple per step)
+        let checkpoints: any[] = [];
         if (stepData.checkpoint) {
+          // Legacy: single checkpoint format
           const cp = stepData.checkpoint;
           if (cp.question && Array.isArray(cp.options) && cp.options.length >= 2) {
-            checkpoint = await storage.createOrUpdateStepCheckpoint({
+            const checkpoint = await storage.createStepCheckpoint({
               stepId: step.id,
               question: cp.question,
               options: cp.options,
               correctOptionIndex: cp.correctOptionIndex ?? 0,
               explanation: cp.explanation || null,
+              order: 1,
             });
+            checkpoints.push(checkpoint);
+          }
+        } else if (stepData.checkpoints && Array.isArray(stepData.checkpoints)) {
+          // New: multiple checkpoints format
+          await storage.deleteStepCheckpointsByStepId(step.id);
+          for (let k = 0; k < stepData.checkpoints.length; k++) {
+            const cp = stepData.checkpoints[k];
+            if (cp.question && Array.isArray(cp.options) && cp.options.length >= 2) {
+              const checkpoint = await storage.createStepCheckpoint({
+                stepId: step.id,
+                question: cp.question,
+                options: cp.options,
+                correctOptionIndex: cp.correctOptionIndex ?? 0,
+                explanation: cp.explanation || null,
+                order: k + 1,
+              });
+              checkpoints.push(checkpoint);
+            }
           }
         } else {
-          // Remove checkpoint if not provided
-          await storage.deleteStepCheckpoint(step.id);
+          // Remove checkpoints if not provided
+          await storage.deleteStepCheckpointsByStepId(step.id);
         }
 
-        resultSteps.push({ ...step, contentBlocks: resultBlocks, checkpoint });
+        resultSteps.push({ ...step, contentBlocks: resultBlocks, checkpoints });
       }
 
       res.json(resultSteps);

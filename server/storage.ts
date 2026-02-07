@@ -62,6 +62,12 @@ import {
 import { db } from "./db";
 import { eq, desc, and, sql, inArray } from "drizzle-orm";
 
+// Helper to strip password from user objects for API responses
+function stripPassword<T extends { password?: string }>(user: T): Omit<T, 'password'> {
+  const { password, ...userWithoutPassword } = user;
+  return userWithoutPassword;
+}
+
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
@@ -177,10 +183,12 @@ export interface IStorage {
   deleteStepContentBlock(id: number): Promise<void>;
   deleteStepContentBlocksByStepId(stepId: number): Promise<void>;
 
-  // Step checkpoint operations
-  getStepCheckpoint(stepId: number): Promise<StepCheckpoint | undefined>;
-  createOrUpdateStepCheckpoint(checkpoint: InsertStepCheckpoint): Promise<StepCheckpoint>;
-  deleteStepCheckpoint(stepId: number): Promise<void>;
+  // Step checkpoint operations (multiple per step)
+  getStepCheckpoints(stepId: number): Promise<StepCheckpoint[]>;
+  createStepCheckpoint(checkpoint: InsertStepCheckpoint): Promise<StepCheckpoint>;
+  updateStepCheckpoint(id: number, checkpoint: Partial<InsertStepCheckpoint>): Promise<StepCheckpoint | undefined>;
+  deleteStepCheckpoint(id: number): Promise<void>;
+  deleteStepCheckpointsByStepId(stepId: number): Promise<void>;
 
   // User step progress operations
   getUserStepProgress(userId: string, stepId: number): Promise<UserStepProgress | undefined>;
@@ -277,13 +285,13 @@ export class DatabaseStorage implements IStorage {
       const userGroups = await this.getUserGroups(user.id);
 
       result.push({
-        ...user,
+        ...stripPassword(user),
         modulesCompleted: uniqueCompletedModules.size,
         totalModules: await this.getPublishedModules().then(m => m.length),
         totalAttempts: attempts.length,
         averageScore: avgScore,
         groups: userGroups,
-      });
+      } as UserWithProgress);
     }
 
     return result;
@@ -303,13 +311,13 @@ export class DatabaseStorage implements IStorage {
 
     const totalModules = await this.getPublishedModules().then(m => m.length);
     return {
-      ...user,
+      ...stripPassword(user),
       modulesCompleted: uniqueCompletedModules.size,
       totalModules,
       totalAttempts: attempts.length,
       averageScore: avgScore,
       groups: userGroupsList,
-    };
+    } as UserWithProgress;
   }
 
   async updateUserRole(userId: string, role: string): Promise<User | undefined> {
@@ -968,33 +976,46 @@ export class DatabaseStorage implements IStorage {
     await db.delete(stepContentBlocks).where(eq(stepContentBlocks.stepId, stepId));
   }
 
-  // Step checkpoint operations
-  async getStepCheckpoint(stepId: number): Promise<StepCheckpoint | undefined> {
-    const [checkpoint] = await db.select().from(stepCheckpoints).where(eq(stepCheckpoints.stepId, stepId));
-    return checkpoint;
+  // Step checkpoint operations (multiple per step)
+  async getStepCheckpoints(stepId: number): Promise<StepCheckpoint[]> {
+    return db.select().from(stepCheckpoints)
+      .where(eq(stepCheckpoints.stepId, stepId))
+      .orderBy(stepCheckpoints.order);
   }
 
-  async createOrUpdateStepCheckpoint(checkpoint: InsertStepCheckpoint): Promise<StepCheckpoint> {
-    const existing = await this.getStepCheckpoint(checkpoint.stepId);
+  async createStepCheckpoint(checkpoint: InsertStepCheckpoint): Promise<StepCheckpoint> {
     const data = {
       stepId: checkpoint.stepId,
       question: checkpoint.question,
       options: [...checkpoint.options] as string[],
       correctOptionIndex: checkpoint.correctOptionIndex,
       explanation: checkpoint.explanation,
+      order: checkpoint.order || 1,
     };
-    if (existing) {
-      const [updated] = await db.update(stepCheckpoints)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(stepCheckpoints.stepId, checkpoint.stepId))
-        .returning();
-      return updated;
-    }
     const [created] = await db.insert(stepCheckpoints).values(data).returning();
     return created;
   }
 
-  async deleteStepCheckpoint(stepId: number): Promise<void> {
+  async updateStepCheckpoint(id: number, checkpoint: Partial<InsertStepCheckpoint>): Promise<StepCheckpoint | undefined> {
+    const data: Record<string, any> = { updatedAt: new Date() };
+    if (checkpoint.question !== undefined) data.question = checkpoint.question;
+    if (checkpoint.options !== undefined) data.options = [...checkpoint.options] as string[];
+    if (checkpoint.correctOptionIndex !== undefined) data.correctOptionIndex = checkpoint.correctOptionIndex;
+    if (checkpoint.explanation !== undefined) data.explanation = checkpoint.explanation;
+    if (checkpoint.order !== undefined) data.order = checkpoint.order;
+
+    const [updated] = await db.update(stepCheckpoints)
+      .set(data)
+      .where(eq(stepCheckpoints.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteStepCheckpoint(id: number): Promise<void> {
+    await db.delete(stepCheckpoints).where(eq(stepCheckpoints.id, id));
+  }
+
+  async deleteStepCheckpointsByStepId(stepId: number): Promise<void> {
     await db.delete(stepCheckpoints).where(eq(stepCheckpoints.stepId, stepId));
   }
 
@@ -1014,11 +1035,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async submitStepCheckpoint(userId: string, stepId: number, selectedAnswerIndex: number): Promise<{ correct: boolean; unlockNext: boolean }> {
-    const checkpoint = await this.getStepCheckpoint(stepId);
-    if (!checkpoint) {
-      throw new Error("Checkpoint not found");
+    const checkpoints = await this.getStepCheckpoints(stepId);
+    if (checkpoints.length === 0) {
+      throw new Error("No checkpoints found for this step");
     }
 
+    // For now, validate against the first checkpoint (will be enhanced for multiple questions later)
+    const checkpoint = checkpoints[0];
     const correct = selectedAnswerIndex === checkpoint.correctOptionIndex;
 
     // Check if progress already exists
@@ -1060,7 +1083,7 @@ export class DatabaseStorage implements IStorage {
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
       const contentBlocks = await this.getStepContentBlocks(step.id);
-      const checkpoint = await this.getStepCheckpoint(step.id);
+      const checkpoints = await this.getStepCheckpoints(step.id);
       const progress = progressMap.get(step.id);
 
       // First step is always unlocked, subsequent steps unlock after previous step is completed
@@ -1079,7 +1102,7 @@ export class DatabaseStorage implements IStorage {
       stepsWithProgress.push({
         ...step,
         contentBlocks,
-        checkpoint: isUnlocked ? checkpoint : undefined, // Hide checkpoint if locked
+        checkpoint: isUnlocked ? checkpoints[0] : undefined, // Hide checkpoint if locked (first checkpoint for now)
         isUnlocked,
         isCompleted,
         userAnswer: progress?.selectedAnswerIndex ?? undefined,

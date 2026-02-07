@@ -55,7 +55,8 @@ import type { Module, ModuleStep, StepContentBlock, StepCheckpoint } from "@shar
 
 interface StepWithDetails extends ModuleStep {
   contentBlocks: StepContentBlock[];
-  checkpoint: StepCheckpoint | null;
+  checkpoints?: StepCheckpoint[];
+  checkpoint?: StepCheckpoint | null; // Legacy support
 }
 
 interface StepFormData {
@@ -63,7 +64,7 @@ interface StepFormData {
   tempId: string;
   title: string;
   contentBlocks: ContentBlockFormData[];
-  checkpoint: CheckpointFormData | null;
+  checkpoints: CheckpointFormData[];
   checkpointRequired: boolean;
 }
 
@@ -85,6 +86,7 @@ interface CheckpointFormData {
 interface CheckpointEditorProps {
   checkpoint: CheckpointFormData;
   stepIndex: number;
+  checkpointIndex: number;
   checkpointRequired: boolean;
   onChange: (data: CheckpointFormData) => void;
   onRequiredChange: (required: boolean) => void;
@@ -482,7 +484,7 @@ function StepPreview({ step, index }: { step: StepFormData; index: number }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {step.contentBlocks.length === 0 && !step.checkpoint && (
+        {step.contentBlocks.length === 0 && step.checkpoints.length === 0 && (
           <p className="text-muted-foreground italic">No content added to this step yet.</p>
         )}
 
@@ -490,11 +492,11 @@ function StepPreview({ step, index }: { step: StepFormData; index: number }) {
           <ContentBlockPreview key={block.tempId || blockIndex} block={block} />
         ))}
 
-        {step.checkpoint && (
-          <div className="mt-8 pt-6 border-t">
-            <CheckpointPreview checkpoint={step.checkpoint} stepIndex={index} />
+        {step.checkpoints.map((checkpoint, cpIndex) => (
+          <div key={cpIndex} className="mt-8 pt-6 border-t">
+            <CheckpointPreview checkpoint={checkpoint} stepIndex={index} />
           </div>
-        )}
+        ))}
       </CardContent>
     </Card>
   );
@@ -563,17 +565,29 @@ function SortableStep({
   const handleAddCheckpoint = () => {
     onChange({
       ...step,
-      checkpoint: {
-        question: "",
-        options: ["", "", "", ""],
-        correctOptionIndex: 0,
-        explanation: "",
-      },
+      checkpoints: [
+        ...step.checkpoints,
+        {
+          question: "",
+          options: ["", "", "", ""],
+          correctOptionIndex: 0,
+          explanation: "",
+        },
+      ],
     });
   };
 
-  const handleRemoveCheckpoint = () => {
-    onChange({ ...step, checkpoint: null });
+  const handleRemoveCheckpoint = (checkpointIndex: number) => {
+    onChange({
+      ...step,
+      checkpoints: step.checkpoints.filter((_, i) => i !== checkpointIndex),
+    });
+  };
+
+  const handleCheckpointChange = (checkpointIndex: number, data: CheckpointFormData) => {
+    const newCheckpoints = [...step.checkpoints];
+    newCheckpoints[checkpointIndex] = data;
+    onChange({ ...step, checkpoints: newCheckpoints });
   };
 
   const handleContentBlockDragEnd = (event: DragEndEvent) => {
@@ -619,10 +633,10 @@ function SortableStep({
                 </CollapsibleTrigger>
               </div>
               <div className="flex items-center gap-2">
-                {step.checkpoint && (
+                {step.checkpoints.length > 0 && (
                   <Badge variant="secondary" className="text-xs">
                     <HelpCircle className="h-3 w-3 mr-1" />
-                    Checkpoint
+                    {step.checkpoints.length} Question{step.checkpoints.length > 1 ? 's' : ''}
                   </Badge>
                 )}
                 <Badge variant="outline" className="text-xs">
@@ -703,32 +717,36 @@ function SortableStep({
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label className="text-base font-medium">Checkpoint Question</Label>
-                  {!step.checkpoint && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleAddCheckpoint}
-                      data-testid={`button-add-checkpoint-${index}`}
-                    >
-                      <Plus className="h-4 w-4 mr-1" />
-                      Add Checkpoint
-                    </Button>
-                  )}
+                  <Label className="text-base font-medium">Checkpoint Questions ({step.checkpoints.length})</Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddCheckpoint}
+                    data-testid={`button-add-checkpoint-${index}`}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Question
+                  </Button>
                 </div>
 
-                {step.checkpoint ? (
-                  <CheckpointEditor
-                    checkpoint={step.checkpoint}
-                    stepIndex={index}
-                    checkpointRequired={step.checkpointRequired}
-                    onChange={(data) => onChange({ ...step, checkpoint: data })}
-                    onRequiredChange={(required) => onChange({ ...step, checkpointRequired: required })}
-                    onRemove={handleRemoveCheckpoint}
-                  />
+                {step.checkpoints.length > 0 ? (
+                  <div className="space-y-4">
+                    {step.checkpoints.map((checkpoint, cpIndex) => (
+                      <CheckpointEditor
+                        key={cpIndex}
+                        checkpoint={checkpoint}
+                        stepIndex={index}
+                        checkpointIndex={cpIndex}
+                        checkpointRequired={step.checkpointRequired}
+                        onChange={(data) => handleCheckpointChange(cpIndex, data)}
+                        onRequiredChange={(required) => onChange({ ...step, checkpointRequired: required })}
+                        onRemove={() => handleRemoveCheckpoint(cpIndex)}
+                      />
+                    ))}
+                  </div>
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-4 border rounded-md border-dashed">
-                    No checkpoint. Add a question to gate access to the next step.
+                    No questions. Add questions to gate access to the next step.
                   </p>
                 )}
               </div>
@@ -788,27 +806,41 @@ export default function ModuleBuilder() {
   useEffect(() => {
     if (existingSteps) {
       setSteps(
-        existingSteps.map((s) => ({
-          id: s.id,
-          tempId: `existing-${s.id}`,
-          title: s.title,
-          contentBlocks: (s.contentBlocks || []).map((b) => ({
-            id: b.id,
-            tempId: `existing-block-${b.id}`,
-            blockType: b.blockType,
-            content: b.content || "",
-            imageUrl: b.imageUrl || "",
-          })),
-          checkpoint: s.checkpoint
-            ? {
+        existingSteps.map((s) => {
+          // Convert legacy checkpoint or new checkpoints array
+          let checkpointsArray: CheckpointFormData[] = [];
+          if (s.checkpoints && Array.isArray(s.checkpoints)) {
+            checkpointsArray = s.checkpoints.map((cp) => ({
+              question: cp.question,
+              options: cp.options || ["", "", "", ""],
+              correctOptionIndex: cp.correctOptionIndex,
+              explanation: cp.explanation || "",
+            }));
+          } else if (s.checkpoint) {
+            // Legacy single checkpoint
+            checkpointsArray = [{
               question: s.checkpoint.question,
               options: s.checkpoint.options || ["", "", "", ""],
               correctOptionIndex: s.checkpoint.correctOptionIndex,
               explanation: s.checkpoint.explanation || "",
-            }
-            : null,
-          checkpointRequired: s.checkpointRequired !== undefined ? s.checkpointRequired : true,
-        }))
+            }];
+          }
+
+          return {
+            id: s.id,
+            tempId: `existing-${s.id}`,
+            title: s.title,
+            contentBlocks: (s.contentBlocks || []).map((b) => ({
+              id: b.id,
+              tempId: `existing-block-${b.id}`,
+              blockType: b.blockType,
+              content: b.content || "",
+              imageUrl: b.imageUrl || "",
+            })),
+            checkpoints: checkpointsArray,
+            checkpointRequired: s.checkpointRequired !== undefined ? s.checkpointRequired : true,
+          };
+        })
       );
       setHasChanges(false);
     }
@@ -860,27 +892,40 @@ export default function ModuleBuilder() {
     onSuccess: (data) => {
       if (data && Array.isArray(data)) {
         setSteps(
-          data.map((s) => ({
-            id: s.id,
-            tempId: `existing-${s.id}`,
-            title: s.title,
-            contentBlocks: (s.contentBlocks || []).map((b) => ({
-              id: b.id,
-              tempId: `existing-block-${b.id}`,
-              blockType: b.blockType,
-              content: b.content || "",
-              imageUrl: b.imageUrl || "",
-            })),
-            checkpoint: s.checkpoint
-              ? {
+          data.map((s) => {
+            // Convert legacy checkpoint or new checkpoints array
+            let checkpointsArray: CheckpointFormData[] = [];
+            if (s.checkpoints && Array.isArray(s.checkpoints)) {
+              checkpointsArray = s.checkpoints.map((cp: any) => ({
+                question: cp.question,
+                options: cp.options || ["", "", "", ""],
+                correctOptionIndex: cp.correctOptionIndex,
+                explanation: cp.explanation || "",
+              }));
+            } else if (s.checkpoint) {
+              checkpointsArray = [{
                 question: s.checkpoint.question,
                 options: s.checkpoint.options || ["", "", "", ""],
                 correctOptionIndex: s.checkpoint.correctOptionIndex,
                 explanation: s.checkpoint.explanation || "",
-              }
-              : null,
-            checkpointRequired: s.checkpointRequired ?? true,
-          }))
+              }];
+            }
+
+            return {
+              id: s.id,
+              tempId: `existing-${s.id}`,
+              title: s.title,
+              contentBlocks: (s.contentBlocks || []).map((b: any) => ({
+                id: b.id,
+                tempId: `existing-block-${b.id}`,
+                blockType: b.blockType,
+                content: b.content || "",
+                imageUrl: b.imageUrl || "",
+              })),
+              checkpoints: checkpointsArray,
+              checkpointRequired: s.checkpointRequired ?? true,
+            };
+          })
         );
       }
       setHasChanges(false);
@@ -909,7 +954,7 @@ export default function ModuleBuilder() {
       tempId: generateTempId(),
       title: `Step ${steps.length + 1}`,
       contentBlocks: [],
-      checkpoint: null,
+      checkpoints: [],
       checkpointRequired: true,
     };
     setSteps([...steps, newStep]);

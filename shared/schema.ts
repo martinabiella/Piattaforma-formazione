@@ -218,14 +218,15 @@ export const stepContentBlocksRelations = relations(stepContentBlocks, ({ one })
   }),
 }));
 
-// Step Checkpoints - mandatory question at end of each step
+// Step Checkpoints - questions at end of each step (multiple per step allowed)
 export const stepCheckpoints = pgTable("step_checkpoints", {
   id: serial("id").primaryKey(),
-  stepId: integer("step_id").references(() => moduleSteps.id, { onDelete: "cascade" }).notNull().unique(),
+  stepId: integer("step_id").references(() => moduleSteps.id, { onDelete: "cascade" }).notNull(),
   question: text("question").notNull(),
   options: jsonb("options").$type<string[]>().notNull(),
   correctOptionIndex: integer("correct_option_index").notNull(),
   explanation: text("explanation"),
+  order: integer("order").default(1).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -259,7 +260,12 @@ export const userStepProgressRelations = relations(userStepProgress, ({ one }) =
   }),
 }));
 
-// Module sections table (legacy - kept for backwards compatibility)
+// ==========================================
+// DEPRECATED: Module sections (legacy system)
+// Use moduleSteps + stepContentBlocks instead
+// Will be removed in future version
+// ==========================================
+/** @deprecated Use moduleSteps instead */
 export const moduleSections = pgTable("module_sections", {
   id: serial("id").primaryKey(),
   moduleId: integer("module_id").references(() => modules.id, { onDelete: "cascade" }).notNull(),
@@ -278,7 +284,12 @@ export const moduleSectionsRelations = relations(moduleSections, ({ one }) => ({
   }),
 }));
 
-// Content Blocks table (new block-based content system)
+// ==========================================
+// DEPRECATED: Content Blocks (legacy module-level blocks)
+// Use stepContentBlocks instead
+// Will be removed in future version
+// ==========================================
+/** @deprecated Use stepContentBlocks instead */
 export const contentBlocks = pgTable("content_blocks", {
   id: serial("id").primaryKey(),
   moduleId: integer("module_id").references(() => modules.id, { onDelete: "cascade" }).notNull(),
