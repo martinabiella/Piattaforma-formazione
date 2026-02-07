@@ -11,9 +11,18 @@ import { useToast } from "@/hooks/use-toast";
 import AuthPage from "@/pages/auth";
 import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
-import ModuleContent from "@/pages/module-content";
 import ModuleSteps from "@/pages/module-steps";
 import Quiz from "@/pages/quiz";
+
+// Redirect component for /app/modules/:id → /app/modules/:id/learn
+function ModuleRedirect() {
+  const [, setLocation] = useLocation();
+  const path = window.location.pathname;
+  useEffect(() => {
+    setLocation(`${path}/learn`);
+  }, [path, setLocation]);
+  return null;
+}
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminModules from "@/pages/admin/modules";
 import ModuleEditor from "@/pages/admin/module-editor";
@@ -93,7 +102,7 @@ function Router() {
 
       <Route path="/app/modules/:id">
         <ProtectedRoute>
-          <ModuleContent />
+          <ModuleRedirect />
         </ProtectedRoute>
       </Route>
 
