@@ -86,17 +86,18 @@ function UserDetailsDialog({
     mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
       return await apiRequest("PATCH", `/api/admin/users/${userId}/role`, { role });
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users", variables.userId] });
       toast({
         title: "Role Updated",
         description: "User role has been updated successfully.",
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
-        description: "Failed to update user role.",
+        description: `Failed to update user role: ${error.message}`,
         variant: "destructive",
       });
     },
@@ -398,11 +399,17 @@ export default function AdminUsers() {
   });
 
   const filteredUsers = users?.filter((user) => {
-    const matchesSearch =
-      user.email?.toLowerCase().includes(search.toLowerCase()) ||
-      user.firstName?.toLowerCase().includes(search.toLowerCase()) ||
-      user.lastName?.toLowerCase().includes(search.toLowerCase());
     const matchesRole = roleFilter === "all" || user.role === roleFilter;
+
+    if (!search) return matchesRole;
+
+    const searchLower = search.toLowerCase();
+    const matchesSearch =
+      (user.email || "").toLowerCase().includes(searchLower) ||
+      (user.firstName || "").toLowerCase().includes(searchLower) ||
+      (user.lastName || "").toLowerCase().includes(searchLower) ||
+      (user.username || "").toLowerCase().includes(searchLower);
+
     return matchesSearch && matchesRole;
   });
 
