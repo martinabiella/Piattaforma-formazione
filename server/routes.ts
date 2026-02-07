@@ -645,11 +645,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ? await storage.updateModuleStep(stepData.id, {
             title: stepData.title,
             order: i + 1,
+            checkpointRequired: stepData.checkpointRequired !== undefined ? stepData.checkpointRequired : true,
           })
           : await storage.createModuleStep({
             moduleId,
             title: stepData.title,
             order: i + 1,
+            checkpointRequired: stepData.checkpointRequired !== undefined ? stepData.checkpointRequired : true,
           });
 
         if (!step) continue;
@@ -728,6 +730,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  // Create new user (admin)
+  app.post("/api/admin/users", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { username, password, email, firstName, lastName, role } = req.body;
+
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password are required" });
+      }
+
+      // Check if username already exists
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(409).json({ message: "Username already exists" });
+      }
+
+      // Hash password and create user
+      const { hashPassword } = await import("./auth");
+      const hashedPassword = await hashPassword(password);
+      const newUser = await storage.createUser({
+        username,
+        password: hashedPassword,
+        email: email || null,
+        firstName: firstName || null,
+        lastName: lastName || null,
+        role: role || "user",
+      });
+
+      res.status(201).json(newUser);
+    } catch (error) {
+      console.error("Error creating user:", error);
+      res.status(500).json({ message: "Failed to create user" });
     }
   });
 

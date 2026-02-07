@@ -46,6 +46,8 @@ import {
   Eye,
   Pencil,
   CheckCircle2,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -62,6 +64,7 @@ interface StepFormData {
   title: string;
   contentBlocks: ContentBlockFormData[];
   checkpoint: CheckpointFormData | null;
+  checkpointRequired: boolean;
 }
 
 interface ContentBlockFormData {
@@ -77,6 +80,126 @@ interface CheckpointFormData {
   options: string[];
   correctOptionIndex: number;
   explanation: string;
+}
+
+interface CheckpointEditorProps {
+  checkpoint: CheckpointFormData;
+  stepIndex: number;
+  checkpointRequired: boolean;
+  onChange: (data: CheckpointFormData) => void;
+  onRequiredChange: (required: boolean) => void;
+  onRemove: () => void;
+}
+
+function CheckpointEditor({
+  checkpoint,
+  stepIndex,
+  checkpointRequired,
+  onChange,
+  onRequiredChange,
+  onRemove,
+}: CheckpointEditorProps) {
+  const handleOptionChange = (optionIndex: number, value: string) => {
+    const newOptions = [...checkpoint.options];
+    newOptions[optionIndex] = value;
+    onChange({ ...checkpoint, options: newOptions });
+  };
+
+  const handleCorrectOptionChange = (index: number) => {
+    onChange({ ...checkpoint, correctOptionIndex: index });
+  };
+
+  const addOption = () => {
+    onChange({ ...checkpoint, options: [...checkpoint.options, ""] });
+  };
+
+  const removeOption = (index: number) => {
+    const newOptions = checkpoint.options.filter((_, i) => i !== index);
+    onChange({ ...checkpoint, options: newOptions });
+  };
+
+  return (
+    <Card className="border-2 border-primary/20">
+      <CardHeader className="pb-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <HelpCircle className="h-5 w-5 text-primary" />
+            <CardTitle className="text-lg">Checkpoint Question</CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mr-4">
+              <Switch
+                id={`required-${stepIndex}`}
+                checked={checkpointRequired}
+                onCheckedChange={onRequiredChange}
+              />
+              <Label htmlFor={`required-${stepIndex}`}>Required to continue</Label>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onRemove}
+              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>Question Text</Label>
+          <Textarea
+            value={checkpoint.question}
+            onChange={(e) => onChange({ ...checkpoint, question: e.target.value })}
+            placeholder="Enter the checkpoint question"
+            rows={2}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Options</Label>
+          {checkpoint.options.map((option, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                type="radio"
+                name={`correct-option-${stepIndex}`}
+                checked={checkpoint.correctOptionIndex === i}
+                onChange={() => handleCorrectOptionChange(i)}
+                className="h-4 w-4"
+              />
+              <Input
+                value={option}
+                onChange={(e) => handleOptionChange(i, e.target.value)}
+                placeholder={`Option ${i + 1}`}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => removeOption(i)}
+                disabled={checkpoint.options.length <= 2}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+          <Button variant="outline" size="sm" onClick={addOption} className="mt-2">
+            <Plus className="h-4 w-4 mr-2" /> Add Option
+          </Button>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Explanation (shown after answering)</Label>
+          <Textarea
+            value={checkpoint.explanation}
+            onChange={(e) => onChange({ ...checkpoint, explanation: e.target.value })}
+            placeholder="Explain why the answer is correct..."
+            rows={2}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 interface ModuleFormData {
@@ -133,6 +256,40 @@ function SortableContentBlock({
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+  };
+
+  const { toast } = useToast();
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    setIsUploading(true);
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Upload failed");
+
+      const data = await res.json();
+      onChange({ imageUrl: data.url });
+      toast({ title: "Success", description: "Image uploaded successfully" });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Error",
+        description: "Failed to upload image",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -192,12 +349,36 @@ function SortableContentBlock({
 
           <div className="space-y-2">
             <Label>Image URL (optional)</Label>
-            <Input
-              value={block.imageUrl}
-              onChange={(e) => onChange({ imageUrl: e.target.value })}
-              placeholder="https://example.com/image.jpg"
-              data-testid={`input-block-image-${stepIndex}-${blockIndex}`}
-            />
+            <div className="flex gap-2">
+              <Input
+                value={block.imageUrl || ""}
+                onChange={(e) => onChange({ imageUrl: e.target.value })}
+                placeholder="https://example.com/image.jpg"
+                data-testid={`input-block-image-${stepIndex}-${blockIndex}`}
+              />
+              <div className="relative">
+                <input
+                  type="file"
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  disabled={isUploading}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  title="Upload image"
+                  disabled={isUploading}
+                >
+                  {isUploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -205,95 +386,7 @@ function SortableContentBlock({
   );
 }
 
-function CheckpointEditor({
-  checkpoint,
-  stepIndex,
-  onChange,
-  onRemove,
-}: {
-  checkpoint: CheckpointFormData;
-  stepIndex: number;
-  onChange: (data: CheckpointFormData) => void;
-  onRemove: () => void;
-}) {
-  const handleOptionChange = (index: number, value: string) => {
-    const newOptions = [...checkpoint.options];
-    newOptions[index] = value;
-    onChange({ ...checkpoint, options: newOptions });
-  };
-
-  return (
-    <Card className="border-2 border-primary/30 bg-primary/5" data-testid={`checkpoint-editor-${stepIndex}`}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <HelpCircle className="h-5 w-5 text-primary" />
-            <span className="text-sm font-medium">Checkpoint Question</span>
-            <Badge variant="secondary" className="text-xs">Required to unlock next step</Badge>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRemove}
-            data-testid={`button-remove-checkpoint-${stepIndex}`}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label>Question</Label>
-          <Textarea
-            value={checkpoint.question}
-            onChange={(e) => onChange({ ...checkpoint, question: e.target.value })}
-            placeholder="Enter the checkpoint question"
-            rows={2}
-            data-testid={`input-checkpoint-question-${stepIndex}`}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label>Answer Options (click to mark correct)</Label>
-          {checkpoint.options.map((option, idx) => (
-            <div key={idx} className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onChange({ ...checkpoint, correctOptionIndex: idx })}
-                className={cn(
-                  "w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm font-medium shrink-0 transition-colors",
-                  checkpoint.correctOptionIndex === idx
-                    ? "border-emerald-500 bg-emerald-500 text-white"
-                    : "border-muted-foreground/30 hover:border-primary"
-                )}
-                data-testid={`button-correct-option-${stepIndex}-${idx}`}
-              >
-                {String.fromCharCode(65 + idx)}
-              </button>
-              <Input
-                value={option}
-                onChange={(e) => handleOptionChange(idx, e.target.value)}
-                placeholder={`Option ${String.fromCharCode(65 + idx)}`}
-                data-testid={`input-option-${stepIndex}-${idx}`}
-              />
-            </div>
-          ))}
-        </div>
-
-        <div className="space-y-2">
-          <Label>Explanation (shown after answering)</Label>
-          <Textarea
-            value={checkpoint.explanation}
-            onChange={(e) => onChange({ ...checkpoint, explanation: e.target.value })}
-            placeholder="Explain the correct answer"
-            rows={2}
-            data-testid={`input-checkpoint-explanation-${stepIndex}`}
-          />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+// CheckpointEditor moved to top of file
 
 // Preview components that match user-facing styling
 function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
@@ -301,15 +394,15 @@ function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
     <div data-testid="content-block-preview">
       {block.imageUrl && (
         <div className="mb-4 rounded-lg overflow-hidden">
-          <img 
-            src={block.imageUrl} 
+          <img
+            src={block.imageUrl}
             alt="Step content"
             className="w-full h-auto max-h-80 object-cover"
           />
         </div>
       )}
       {block.content && (
-        <div 
+        <div
           className="prose prose-lg dark:prose-invert max-w-none"
           dangerouslySetInnerHTML={{ __html: block.content }}
         />
@@ -320,7 +413,7 @@ function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
 
 function CheckpointPreview({ checkpoint, stepIndex }: { checkpoint: CheckpointFormData; stepIndex: number }) {
   const options = checkpoint.options || [];
-  
+
   return (
     <Card className="border-2" data-testid={`checkpoint-preview-${stepIndex}`}>
       <CardHeader className="pb-4">
@@ -334,11 +427,11 @@ function CheckpointPreview({ checkpoint, stepIndex }: { checkpoint: CheckpointFo
         <p className="font-medium text-lg" data-testid={`text-checkpoint-question-preview-${stepIndex}`}>
           {checkpoint.question || "No question set"}
         </p>
-        
+
         <div className="space-y-2">
           {options.map((option, index) => {
             const isCorrect = index === checkpoint.correctOptionIndex;
-            
+
             return (
               <button
                 key={index}
@@ -392,7 +485,7 @@ function StepPreview({ step, index }: { step: StepFormData; index: number }) {
         {step.contentBlocks.length === 0 && !step.checkpoint && (
           <p className="text-muted-foreground italic">No content added to this step yet.</p>
         )}
-        
+
         {step.contentBlocks.map((block, blockIndex) => (
           <ContentBlockPreview key={block.tempId || blockIndex} block={block} />
         ))}
@@ -628,7 +721,9 @@ function SortableStep({
                   <CheckpointEditor
                     checkpoint={step.checkpoint}
                     stepIndex={index}
+                    checkpointRequired={step.checkpointRequired}
                     onChange={(data) => onChange({ ...step, checkpoint: data })}
+                    onRequiredChange={(required) => onChange({ ...step, checkpointRequired: required })}
                     onRemove={handleRemoveCheckpoint}
                   />
                 ) : (
@@ -706,12 +801,13 @@ export default function ModuleBuilder() {
           })),
           checkpoint: s.checkpoint
             ? {
-                question: s.checkpoint.question,
-                options: s.checkpoint.options || ["", "", "", ""],
-                correctOptionIndex: s.checkpoint.correctOptionIndex,
-                explanation: s.checkpoint.explanation || "",
-              }
+              question: s.checkpoint.question,
+              options: s.checkpoint.options || ["", "", "", ""],
+              correctOptionIndex: s.checkpoint.correctOptionIndex,
+              explanation: s.checkpoint.explanation || "",
+            }
             : null,
+          checkpointRequired: s.checkpointRequired !== undefined ? s.checkpointRequired : true,
         }))
       );
       setHasChanges(false);
@@ -725,6 +821,7 @@ export default function ModuleBuilder() {
     onSuccess: (newModule) => {
       toast({ title: "Success", description: "Module created successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/modules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/modules"] });
       setLocation(`/admin/modules/${newModule.id}/builder`);
     },
     onError: (error) => {
@@ -744,6 +841,7 @@ export default function ModuleBuilder() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/modules", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/modules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/modules"] });
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
@@ -775,17 +873,19 @@ export default function ModuleBuilder() {
             })),
             checkpoint: s.checkpoint
               ? {
-                  question: s.checkpoint.question,
-                  options: s.checkpoint.options || ["", "", "", ""],
-                  correctOptionIndex: s.checkpoint.correctOptionIndex,
-                  explanation: s.checkpoint.explanation || "",
-                }
+                question: s.checkpoint.question,
+                options: s.checkpoint.options || ["", "", "", ""],
+                correctOptionIndex: s.checkpoint.correctOptionIndex,
+                explanation: s.checkpoint.explanation || "",
+              }
               : null,
+            checkpointRequired: s.checkpointRequired ?? true,
           }))
         );
       }
       setHasChanges(false);
       queryClient.invalidateQueries({ queryKey: ["/api/admin/modules", id, "steps"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/modules"] });
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
@@ -810,6 +910,7 @@ export default function ModuleBuilder() {
       title: `Step ${steps.length + 1}`,
       contentBlocks: [],
       checkpoint: null,
+      checkpointRequired: true,
     };
     setSteps([...steps, newStep]);
     setExpandedSteps(new Set([...Array.from(expandedSteps), steps.length]));

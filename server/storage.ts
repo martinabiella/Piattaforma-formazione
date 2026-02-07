@@ -203,6 +203,25 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async createUser(userData: {
+    username: string;
+    password: string;
+    email?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    role?: string;
+  }): Promise<User> {
+    const [user] = await db.insert(users).values({
+      username: userData.username,
+      password: userData.password,
+      email: userData.email || null,
+      firstName: userData.firstName || null,
+      lastName: userData.lastName || null,
+      role: userData.role || "user",
+    }).returning();
+    return user;
+  }
+
   async upsertUser(userData: UpsertUser): Promise<User> {
     // First check if user exists by ID
     const existingById = await this.getUser(userData.id);
@@ -374,9 +393,10 @@ export class DatabaseStorage implements IStorage {
   async createContentBlock(blockData: InsertContentBlock): Promise<ContentBlock> {
     const data: Record<string, unknown> = { ...blockData };
     if (blockData.options) {
-      data.options = [...blockData.options] as string[];
+      data.options = blockData.options;
     }
-    const [block] = await db.insert(contentBlocks).values(data as InsertContentBlock).returning();
+    // @ts-ignore
+    const [block] = await db.insert(contentBlocks).values(data).returning();
     return block;
   }
 
@@ -531,12 +551,13 @@ export class DatabaseStorage implements IStorage {
   async createAttempt(attemptData: InsertQuizAttempt): Promise<QuizAttempt> {
     const data: Record<string, unknown> = {
       ...attemptData,
-      answers: [...attemptData.answers] as number[],
+      answers: attemptData.answers,
     };
     if (attemptData.inlineAnswers) {
-      data.inlineAnswers = [...attemptData.inlineAnswers] as InlineAnswer[];
+      data.inlineAnswers = attemptData.inlineAnswers;
     }
-    const [attempt] = await db.insert(quizAttempts).values(data as InsertQuizAttempt).returning();
+    // @ts-ignore
+    const [attempt] = await db.insert(quizAttempts).values(data).returning();
     return attempt;
   }
 

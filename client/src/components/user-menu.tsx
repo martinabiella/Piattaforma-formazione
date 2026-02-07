@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -21,6 +21,7 @@ export function UserMenu() {
   const handleLogout = async () => {
     try {
       await apiRequest("POST", "/api/logout");
+      queryClient.clear();
       window.location.href = "/auth";
     } catch (error) {
       toast({

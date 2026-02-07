@@ -119,6 +119,46 @@ export function setupAuth(app: Express) {
         })(req, res, next);
     });
 
+    // User Registration
+    app.post("/api/register", async (req, res, next) => {
+        try {
+            const { username, password, email, firstName, lastName } = req.body;
+
+            // Validate required fields
+            if (!username || !password) {
+                return res.status(400).json({ message: "Username and password are required" });
+            }
+
+            // Check if username already exists
+            const existingUser = await storage.getUserByUsername(username);
+            if (existingUser) {
+                return res.status(409).json({ message: "Username already exists" });
+            }
+
+            // Hash password and create user
+            const hashedPassword = await hashPassword(password);
+            const newUser = await storage.createUser({
+                username,
+                password: hashedPassword,
+                email: email || null,
+                firstName: firstName || null,
+                lastName: lastName || null,
+                role: "user",
+            });
+
+            // Log user in after registration
+            req.logIn(newUser, (err) => {
+                if (err) {
+                    return next(err);
+                }
+                return res.status(201).json(newUser);
+            });
+        } catch (error) {
+            console.error("Registration error:", error);
+            return res.status(500).json({ message: "Registration failed" });
+        }
+    });
+
     // Replit Strategy (Conditional)
     if (process.env.REPL_ID) {
         (async () => {
@@ -196,7 +236,11 @@ export function setupAuth(app: Express) {
     app.post("/api/logout", (req, res, next) => {
         req.logout((err) => {
             if (err) return next(err);
-            res.sendStatus(200);
+            req.session.destroy((err) => {
+                if (err) return next(err);
+                res.clearCookie("connect.sid");
+                res.json({ message: "Logged out successfully" });
+            });
         });
     });
 

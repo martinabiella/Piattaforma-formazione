@@ -184,6 +184,7 @@ export const moduleSteps = pgTable("module_steps", {
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
   order: integer("order").default(1).notNull(),
+  checkpointRequired: boolean("checkpoint_required").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
