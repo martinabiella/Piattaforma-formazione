@@ -46,6 +46,7 @@ const upload = multer({
 });
 
 export function setupUploadRoutes(app: Express) {
+    console.log("Setting up upload routes");
     // Serve static files from uploads directory
     app.use("/uploads", (req, res, next) => {
         // Allow access to uploaded files
@@ -58,20 +59,19 @@ export function setupUploadRoutes(app: Express) {
     app.post(
         "/api/upload",
         isAuthenticated,
-        upload.single("file"),
-        (req: Request, res: Response) => {
+        upload.single("image"),
+        (req: any, res: Response) => {
+            console.log("Upload request received", req.user?.id);
             if (!req.file) {
+                console.log("No file received");
                 return res.status(400).json({ message: "No file uploaded" });
             }
 
+            console.log("File uploaded:", req.file.path);
+
             // Return the URL to access the uploaded file
             const fileUrl = `/uploads/${req.file.filename}`;
-            res.json({
-                url: fileUrl,
-                filename: req.file.filename,
-                originalName: req.file.originalname,
-                size: req.file.size,
-            });
+            res.json({ url: fileUrl });
         }
     );
 

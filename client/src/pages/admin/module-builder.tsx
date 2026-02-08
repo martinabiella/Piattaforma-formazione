@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import { AdminLayout } from "@/components/admin-layout";
@@ -262,6 +262,7 @@ function SortableContentBlock({
 
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -275,6 +276,7 @@ function SortableContentBlock({
       const res = await fetch("/api/upload", {
         method: "POST",
         body: formData,
+        credentials: "include",
       });
 
       if (!res.ok) throw new Error("Upload failed");
@@ -361,7 +363,8 @@ function SortableContentBlock({
               <div className="relative">
                 <input
                   type="file"
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  ref={fileInputRef}
+                  className="hidden"
                   accept="image/*"
                   onChange={handleImageUpload}
                   disabled={isUploading}
@@ -372,6 +375,7 @@ function SortableContentBlock({
                   size="icon"
                   title="Upload image"
                   disabled={isUploading}
+                  onClick={() => fileInputRef.current?.click()}
                 >
                   {isUploading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
