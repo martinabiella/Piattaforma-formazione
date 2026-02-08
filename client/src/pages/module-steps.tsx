@@ -30,11 +30,16 @@ interface CheckpointProps {
 }
 
 function Checkpoint({ step, onAnswer, isPending }: CheckpointProps) {
-  const [selected, setSelected] = useState<number | null>(step.userAnswer ?? null);
-  const showResult = step.isCompleted;
   const checkpoint = step.checkpoint;
-
   if (!checkpoint) return null;
+
+  // Use checkpoint-level progress if available, otherwise fall back to step-level
+  const checkpointWithProgress = checkpoint as typeof checkpoint & { userAnswer?: number; wasCorrect?: boolean };
+  const savedAnswer = checkpointWithProgress.userAnswer;
+  const wasCorrect = checkpointWithProgress.wasCorrect;
+  const showResult = savedAnswer !== undefined;
+
+  const [selected, setSelected] = useState<number | null>(savedAnswer ?? null);
 
   const options = checkpoint.options || [];
 
@@ -51,9 +56,9 @@ function Checkpoint({ step, onAnswer, isPending }: CheckpointProps) {
   return (
     <Card className={cn(
       "border-2",
-      showResult && step.wasCorrect && "border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-950/20",
-      showResult && !step.wasCorrect && "border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20"
-    )} data-testid={`checkpoint-${step.id}`}>
+      showResult && wasCorrect && "border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-950/20",
+      showResult && !wasCorrect && "border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20"
+    )} data-testid={`checkpoint-${checkpoint.id}`}>
       <CardHeader className="pb-4">
         <div className="flex items-center gap-2">
           <HelpCircle className="h-5 w-5 text-primary" />
@@ -126,7 +131,7 @@ function Checkpoint({ step, onAnswer, isPending }: CheckpointProps) {
         {showResult && checkpoint.explanation && (
           <div className={cn(
             "p-4 rounded-lg",
-            step.wasCorrect ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-amber-100 dark:bg-amber-900/30"
+            wasCorrect ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-amber-100 dark:bg-amber-900/30"
           )}>
             <p className="text-sm" data-testid={`text-explanation-${step.id}`}>
               <strong>Explanation:</strong> {checkpoint.explanation}
@@ -136,7 +141,7 @@ function Checkpoint({ step, onAnswer, isPending }: CheckpointProps) {
 
         {showResult && (
           <div className="flex items-center gap-2 text-sm">
-            {step.wasCorrect ? (
+            {wasCorrect ? (
               <>
                 <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                 <span className="text-emerald-600 font-medium">Correct! You can proceed to the next step.</span>
@@ -195,7 +200,7 @@ function StepNavItem({
       </div>
       <div className="flex-1 min-w-0">
         <p className={cn(
-          "font-medium truncate",
+          "font-medium",
           isCurrent && "text-primary"
         )}>
           {step.title}
@@ -232,13 +237,12 @@ export default function ModuleSteps() {
   });
 
   const submitCheckpoint = useMutation({
-    mutationFn: async ({ stepId, selectedAnswerIndex }: { stepId: number; selectedAnswerIndex: number }) => {
-      const res = await apiRequest("POST", `/api/steps/${stepId}/checkpoint`, { selectedAnswerIndex }) as Response;
-      return res.json();
+    mutationFn: async ({ stepId, selectedAnswerIndex, checkpointId }: { stepId: number; selectedAnswerIndex: number; checkpointId?: number }) => {
+      return await apiRequest<{ correct: boolean; unlockNext: boolean }>("POST", `/api/steps/${stepId}/checkpoint`, { selectedAnswerIndex, checkpointId });
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/modules", id, "steps"] });
-      if (data.correct) {
+      if (data?.correct) {
         toast({
           title: "Correct!",
           description: "You can proceed to the next step.",
@@ -255,6 +259,26 @@ export default function ModuleSteps() {
       toast({
         title: "Error",
         description: "Failed to submit answer. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const markComplete = useMutation({
+    mutationFn: async (stepId: number) => {
+      return await apiRequest<{ success: boolean }>("POST", `/api/steps/${stepId}/complete`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/modules", id, "steps"] });
+      toast({
+        title: "Step Completed!",
+        description: "You can proceed to the next step.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to mark step complete. Please try again.",
         variant: "destructive",
       });
     },
@@ -321,9 +345,13 @@ export default function ModuleSteps() {
     }
   };
 
-  const handleCheckpointAnswer = (selectedIndex: number) => {
+  const handleCheckpointAnswer = (selectedIndex: number, checkpointId?: number) => {
     if (!currentStep) return;
-    submitCheckpoint.mutate({ stepId: currentStep.id, selectedAnswerIndex: selectedIndex });
+    submitCheckpoint.mutate({
+      stepId: currentStep.id,
+      selectedAnswerIndex: selectedIndex,
+      checkpointId
+    });
   };
 
   if (steps.length === 0) {
@@ -481,7 +509,7 @@ export default function ModuleSteps() {
                       <Checkpoint
                         key={checkpoint.id || index}
                         step={{ ...currentStep, checkpoint }}
-                        onAnswer={handleCheckpointAnswer}
+                        onAnswer={(idx) => handleCheckpointAnswer(idx, checkpoint.id)}
                         isPending={submitCheckpoint.isPending}
                       />
                     ))}
@@ -492,7 +520,7 @@ export default function ModuleSteps() {
                   <div className="mt-8 pt-6 border-t">
                     <Checkpoint
                       step={currentStep}
-                      onAnswer={handleCheckpointAnswer}
+                      onAnswer={(idx) => handleCheckpointAnswer(idx, currentStep.checkpoint!.id)}
                       isPending={submitCheckpoint.isPending}
                     />
                   </div>
@@ -520,6 +548,21 @@ export default function ModuleSteps() {
                       <ArrowRight className="h-4 w-4 ml-2" />
                     </Button>
                   ) : isComplete ? (
+                    <Button asChild data-testid="button-finish">
+                      <Link href="/app">
+                        <Trophy className="h-4 w-4 mr-2" />
+                        Complete - Return to Dashboard
+                      </Link>
+                    </Button>
+                  ) : currentStep && (!currentStep.checkpoints || currentStep.checkpoints.length === 0) && !currentStep.isCompleted ? (
+                    <Button
+                      onClick={() => markComplete.mutate(currentStep.id)}
+                      disabled={markComplete.isPending}
+                      data-testid="button-mark-complete"
+                    >
+                      {markComplete.isPending ? "Completing..." : "Mark as Read & Complete"}
+                    </Button>
+                  ) : currentStep?.isCompleted ? (
                     <Button asChild data-testid="button-finish">
                       <Link href="/app">
                         <Trophy className="h-4 w-4 mr-2" />

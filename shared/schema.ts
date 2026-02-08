@@ -260,6 +260,27 @@ export const userStepProgressRelations = relations(userStepProgress, ({ one }) =
   }),
 }));
 
+// User Checkpoint Progress - tracks completion of individual checkpoints
+export const userCheckpointProgress = pgTable("user_checkpoint_progress", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  checkpointId: integer("checkpoint_id").references(() => stepCheckpoints.id, { onDelete: "cascade" }).notNull(),
+  selectedAnswerIndex: integer("selected_answer_index").notNull(),
+  correct: boolean("correct").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const userCheckpointProgressRelations = relations(userCheckpointProgress, ({ one }) => ({
+  user: one(users, {
+    fields: [userCheckpointProgress.userId],
+    references: [users.id],
+  }),
+  checkpoint: one(stepCheckpoints, {
+    fields: [userCheckpointProgress.checkpointId],
+    references: [stepCheckpoints.id],
+  }),
+}));
+
 // ==========================================
 // DEPRECATED: Module sections (legacy system)
 // Use moduleSteps + stepContentBlocks instead
@@ -478,6 +499,11 @@ export const insertUserStepProgressSchema = createInsertSchema(userStepProgress)
   createdAt: true,
 });
 
+export const insertUserCheckpointProgressSchema = createInsertSchema(userCheckpointProgress).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -532,6 +558,9 @@ export type InsertStepCheckpoint = z.infer<typeof insertStepCheckpointSchema>;
 export type UserStepProgress = typeof userStepProgress.$inferSelect;
 export type InsertUserStepProgress = z.infer<typeof insertUserStepProgressSchema>;
 
+export type UserCheckpointProgress = typeof userCheckpointProgress.$inferSelect;
+export type InsertUserCheckpointProgress = z.infer<typeof insertUserCheckpointProgressSchema>;
+
 // Extended types for frontend use
 export type ModuleWithProgress = Module & {
   status: 'not_started' | 'in_progress' | 'completed';
@@ -581,8 +610,9 @@ export type StepWithContent = ModuleStep & {
 export type StepWithProgress = StepWithContent & {
   isUnlocked: boolean;
   isCompleted: boolean;
-  userAnswer?: number;
-  wasCorrect?: boolean;
+  userAnswer?: number; // Legacy/Aggregate
+  wasCorrect?: boolean; // Legacy/Aggregate
+  checkpoints?: (StepCheckpoint & { userAnswer?: number; wasCorrect?: boolean })[];
 };
 
 export type ModuleWithSteps = Module & {

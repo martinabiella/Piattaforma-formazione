@@ -191,12 +191,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Submit step checkpoint answer
-  app.post("/api/steps/:stepId/checkpoint", isAuthenticated, async (req: any, res) => {
+  // Submit step checkpoint
+  app.post("/api/steps/:id/checkpoint", isAuthenticated, async (req: any, res) => {
     try {
+      const stepId = parseInt(req.params.id);
       const userId = req.user.id;
-      const stepId = parseInt(req.params.stepId);
-      const { selectedAnswerIndex } = req.body;
+      const { selectedAnswerIndex, checkpointId } = req.body;
 
       if (isNaN(stepId)) {
         return res.status(400).json({ message: "Invalid step ID" });
@@ -224,20 +224,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Step is locked" });
       }
 
-      const result = await storage.submitStepCheckpoint(userId, stepId, selectedAnswerIndex);
+      const result = await storage.submitStepCheckpoint(userId, stepId, selectedAnswerIndex, checkpointId);
 
       // Get checkpoint to include correct answer info
       const checkpoints = await storage.getStepCheckpoints(stepId);
-      const checkpoint = checkpoints[0];
+      let checkpoint = checkpoints[0];
+
+      if (checkpointId) {
+        const found = checkpoints.find(c => c.id === checkpointId);
+        if (found) checkpoint = found;
+      }
 
       res.json({
         ...result,
         correctAnswerIndex: checkpoint?.correctOptionIndex,
         explanation: checkpoint?.explanation,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting checkpoint:", error);
-      res.status(500).json({ message: "Failed to submit checkpoint" });
+      res.status(500).json({ message: error.message || "Failed to submit checkpoint" });
+    }
+  });
+
+  // Mark step as complete (for steps without required checkpoints)
+  app.post("/api/steps/:id/complete", isAuthenticated, async (req: any, res) => {
+    try {
+      const stepId = parseInt(req.params.id);
+      const userId = req.user.id;
+
+      if (isNaN(stepId)) {
+        return res.status(400).json({ message: "Invalid step ID" });
+      }
+
+      // Check if step exists and user has access
+      const step = await storage.getModuleStep(stepId);
+      if (!step) {
+        return res.status(404).json({ message: "Step not found" });
+      }
+
+      // Get module to check if user has access
+      const moduleWithSteps = await storage.getModuleWithSteps(step.moduleId, userId);
+      if (!moduleWithSteps) {
+        return res.status(404).json({ message: "Module not found" });
+      }
+
+      // Check if step is unlocked for user
+      const stepData = moduleWithSteps.steps.find(s => s.id === stepId);
+      if (!stepData?.isUnlocked) {
+        return res.status(403).json({ message: "Step is locked" });
+      }
+
+      const result = await storage.markStepComplete(userId, stepId);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error marking step complete:", error);
+      res.status(500).json({ message: error.message || "Failed to mark step complete" });
     }
   });
 

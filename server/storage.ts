@@ -16,6 +16,7 @@ import {
   stepContentBlocks,
   stepCheckpoints,
   userStepProgress,
+  userCheckpointProgress,
   type User,
   type UpsertUser,
   type Module,
@@ -50,6 +51,7 @@ import {
   type InsertStepCheckpoint,
   type UserStepProgress,
   type InsertUserStepProgress,
+  type UserCheckpointProgress,
   type ModuleWithProgress,
   type QuizAttemptWithDetails,
   type UserGroupWithMembers,
@@ -193,7 +195,10 @@ export interface IStorage {
   // User step progress operations
   getUserStepProgress(userId: string, stepId: number): Promise<UserStepProgress | undefined>;
   getUserModuleProgress(userId: string, moduleId: number): Promise<UserStepProgress[]>;
-  submitStepCheckpoint(userId: string, stepId: number, selectedAnswerIndex: number): Promise<{ correct: boolean; unlockNext: boolean }>;
+  getUserCheckpointProgress(userId: string, checkpointId: number): Promise<UserCheckpointProgress | undefined>;
+  getUserModuleCheckpointProgress(userId: string, moduleId: number): Promise<UserCheckpointProgress[]>;
+  submitStepCheckpoint(userId: string, stepId: number, selectedAnswerIndex: number, checkpointId?: number): Promise<{ correct: boolean; unlockNext: boolean }>;
+  markStepComplete(userId: string, stepId: number): Promise<{ success: boolean }>;
 
   // Step-based module with progress
   getModuleWithSteps(moduleId: number, userId: string): Promise<ModuleWithSteps | undefined>;
@@ -822,22 +827,55 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getModulesWithProgress(userId: string, isAdmin: boolean = false): Promise<ModuleWithProgress[]> {
+    // Helper to calculate status based on steps and quiz attempts
+    const calculateStatus = async (mod: Module): Promise<{ status: 'not_started' | 'in_progress' | 'completed', score?: number }> => {
+      // Check legacy quiz attempt first
+      const lastAttempt = await this.getLastAttempt(userId, mod.id);
+
+      // Check step progress
+      const steps = await this.getModuleSteps(mod.id);
+      const userProgress = await this.getUserModuleProgress(userId, mod.id);
+
+      const completedSteps = userProgress.filter(p => p.completedAt).length;
+      const totalSteps = steps.length;
+
+      let status: 'not_started' | 'in_progress' | 'completed' = 'not_started';
+      let score = lastAttempt?.score;
+
+      // Determine status from steps
+      if (totalSteps > 0) {
+        if (completedSteps === totalSteps) {
+          status = 'completed';
+          // Calculate score from steps if no quiz attempt
+          if (!score) {
+            const correctSteps = userProgress.filter(p => p.correct).length;
+            score = Math.round((correctSteps / totalSteps) * 100);
+          }
+        } else if (completedSteps > 0) {
+          status = 'in_progress';
+        }
+      }
+
+      // Legacy quiz override (if passed quiz, mark as completed regardless of steps)
+      if (lastAttempt?.passed) {
+        status = 'completed';
+      } else if (lastAttempt && status === 'not_started') {
+        status = 'in_progress';
+      }
+
+      return { status, score };
+    };
+
     // Admin users see all published modules
     if (isAdmin) {
       const allPublishedModules = await this.getPublishedModules();
       const result: ModuleWithProgress[] = [];
       for (const mod of allPublishedModules) {
-        const lastAttempt = await this.getLastAttempt(userId, mod.id);
-        let status: 'not_started' | 'in_progress' | 'completed' = 'not_started';
-        if (lastAttempt?.passed) {
-          status = 'completed';
-        } else if (lastAttempt) {
-          status = 'in_progress';
-        }
+        const { status, score } = await calculateStatus(mod);
         result.push({
           ...mod,
           status,
-          lastAttemptScore: lastAttempt?.score,
+          lastAttemptScore: score,
         });
       }
       result.sort((a, b) => a.order - b.order);
@@ -871,19 +909,12 @@ export class DatabaseStorage implements IStorage {
       const mod = await this.getModule(moduleId);
       if (!mod || !mod.published) continue;
 
-      const lastAttempt = await this.getLastAttempt(userId, moduleId);
-
-      let status: 'not_started' | 'in_progress' | 'completed' = 'not_started';
-      if (lastAttempt?.passed) {
-        status = 'completed';
-      } else if (lastAttempt) {
-        status = 'in_progress';
-      }
+      const { status, score } = await calculateStatus(mod);
 
       result.push({
         ...mod,
         status,
-        lastAttemptScore: lastAttempt?.score,
+        lastAttemptScore: score,
       });
     }
 
@@ -1034,36 +1065,134 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(userStepProgress.userId, userId), inArray(userStepProgress.stepId, stepIds)));
   }
 
-  async submitStepCheckpoint(userId: string, stepId: number, selectedAnswerIndex: number): Promise<{ correct: boolean; unlockNext: boolean }> {
+  async getUserCheckpointProgress(userId: string, checkpointId: number): Promise<UserCheckpointProgress | undefined> {
+    const [progress] = await db.select().from(userCheckpointProgress)
+      .where(and(eq(userCheckpointProgress.userId, userId), eq(userCheckpointProgress.checkpointId, checkpointId)));
+    return progress;
+  }
+
+  async getUserModuleCheckpointProgress(userId: string, moduleId: number): Promise<UserCheckpointProgress[]> {
+    const steps = await this.getModuleSteps(moduleId);
+    const stepIds = steps.map(s => s.id);
+    if (stepIds.length === 0) return [];
+
+    // Get all checkpoints for these steps
+    const checkpoints = await db.select().from(stepCheckpoints)
+      .where(inArray(stepCheckpoints.stepId, stepIds));
+    const checkpointIds = checkpoints.map(c => c.id);
+
+    if (checkpointIds.length === 0) return [];
+
+    return db.select().from(userCheckpointProgress)
+      .where(and(eq(userCheckpointProgress.userId, userId), inArray(userCheckpointProgress.checkpointId, checkpointIds)));
+  }
+
+  async submitStepCheckpoint(userId: string, stepId: number, selectedAnswerIndex: number, checkpointId?: number): Promise<{ correct: boolean; unlockNext: boolean }> {
     const checkpoints = await this.getStepCheckpoints(stepId);
     if (checkpoints.length === 0) {
       throw new Error("No checkpoints found for this step");
     }
 
-    // For now, validate against the first checkpoint (will be enhanced for multiple questions later)
-    const checkpoint = checkpoints[0];
+    // Identify which checkpoint is being answered
+    let checkpoint: StepCheckpoint | undefined;
+    if (checkpointId) {
+      checkpoint = checkpoints.find(c => c.id === checkpointId);
+    } else {
+      // Fallback for legacy calls (first checkpoint)
+      checkpoint = checkpoints[0];
+    }
+
+    if (!checkpoint) {
+      throw new Error("Checkpoint not found");
+    }
+
     const correct = selectedAnswerIndex === checkpoint.correctOptionIndex;
 
+    // Save individual checkpoint progress
+    const existingCheckpointProgress = await this.getUserCheckpointProgress(userId, checkpoint.id);
+    if (existingCheckpointProgress) {
+      await db.update(userCheckpointProgress)
+        .set({ selectedAnswerIndex, correct })
+        .where(eq(userCheckpointProgress.id, existingCheckpointProgress.id));
+    } else {
+      await db.insert(userCheckpointProgress).values({
+        userId,
+        checkpointId: checkpoint.id,
+        selectedAnswerIndex,
+        correct,
+      });
+    }
+
+    // Check if ALL checkpoints for this step are completed (and correct? or just completed?)
+    // Requirements usually say "must answer correctly to proceed" or just "complete"
+    // Let's assume must be correct if "checkpointRequired" is true, or just answered.
+    // Logic: calculate if step is complete.
+
+    // Refresh progress for this step (fetch all checkpoint progress)
+    const stepCheckpointIds = checkpoints.map(c => c.id);
+    const stepProgress = await db.select().from(userCheckpointProgress)
+      .where(and(eq(userCheckpointProgress.userId, userId), inArray(userCheckpointProgress.checkpointId, stepCheckpointIds)));
+
+    const allAnswered = checkpoints.every(cp => stepProgress.some(p => p.checkpointId === cp.id));
+    const allCorrect = checkpoints.every(cp => stepProgress.find(p => p.checkpointId === cp.id)?.correct);
+
+    // Update overall step progress
+    // Step is considered "completed" if all checkpoints are answered (and maybe correct?)
+    // Existing logic: correct = last answer correct.
+    // New logic: correct = all answers correct.
+
+    if (allAnswered) {
+      const existingStepProgress = await this.getUserStepProgress(userId, stepId);
+      if (existingStepProgress) {
+        await db.update(userStepProgress)
+          .set({
+            selectedAnswerIndex, // Legacy field, keeping last answer
+            correct: allCorrect,
+            completedAt: new Date()
+          })
+          .where(eq(userStepProgress.id, existingStepProgress.id));
+      } else {
+        await db.insert(userStepProgress).values({
+          userId,
+          stepId,
+          selectedAnswerIndex,
+          correct: allCorrect,
+          completedAt: new Date(),
+        });
+      }
+    }
+
+    // Unlock next: if all Correct (or just all Answered? usually all Correct for simple checkpoints)
+    // Legacy return says "unlockNext: true".
+    // Providing immediate feedback on THIS question is important.
+    return { correct, unlockNext: allCorrect };
+  }
+
+  async markStepComplete(userId: string, stepId: number): Promise<{ success: boolean }> {
     // Check if progress already exists
     const existingProgress = await this.getUserStepProgress(userId, stepId);
+    if (existingProgress?.completedAt) {
+      // Already completed
+      return { success: true };
+    }
+
     if (existingProgress) {
-      // Update existing progress
+      // Update existing progress to mark complete
       await db.update(userStepProgress)
-        .set({ selectedAnswerIndex, correct, completedAt: new Date() })
+        .set({ completedAt: new Date(), correct: true })
         .where(eq(userStepProgress.id, existingProgress.id));
     } else {
-      // Create new progress
+      // Create new progress record (for steps without checkpoints)
       await db.insert(userStepProgress).values({
         userId,
         stepId,
-        selectedAnswerIndex,
-        correct,
+        selectedAnswerIndex: null,
+        correct: true,
         completedAt: new Date(),
       });
     }
 
-    // Unlock next step (always unlock after answering, regardless of correctness)
-    return { correct, unlockNext: true };
+    return { success: true };
   }
 
   // Step-based module with progress
@@ -1073,7 +1202,10 @@ export class DatabaseStorage implements IStorage {
 
     const steps = await this.getModuleSteps(moduleId);
     const userProgress = await this.getUserModuleProgress(userId, moduleId);
+    const userCheckpointProgress = await this.getUserModuleCheckpointProgress(userId, moduleId);
+
     const progressMap = new Map(userProgress.map(p => [p.stepId, p]));
+    const checkpointProgressMap = new Map(userCheckpointProgress.map(p => [p.checkpointId, p]));
 
     const stepsWithProgress: StepWithProgress[] = [];
     let currentStepIndex = 0;
@@ -1103,7 +1235,11 @@ export class DatabaseStorage implements IStorage {
         ...step,
         contentBlocks,
         checkpoint: isUnlocked && checkpoints.length > 0 ? checkpoints[0] : undefined, // First checkpoint for backward compatibility
-        checkpoints: isUnlocked ? checkpoints : [], // All checkpoints for new multiple-question UI
+        checkpoints: isUnlocked ? checkpoints.map(cp => ({
+          ...cp,
+          userAnswer: checkpointProgressMap.get(cp.id)?.selectedAnswerIndex,
+          wasCorrect: checkpointProgressMap.get(cp.id)?.correct,
+        })) : [], // All checkpoints with progress
         isUnlocked,
         isCompleted,
         userAnswer: progress?.selectedAnswerIndex ?? undefined,
