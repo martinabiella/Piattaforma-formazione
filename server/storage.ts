@@ -80,6 +80,7 @@ export interface IStorage {
   getUsersWithProgress(): Promise<UserWithProgress[]>;
   getUserWithProgress(userId: string): Promise<UserWithProgress | undefined>;
   updateUserRole(userId: string, role: string): Promise<User | undefined>;
+  updateUserPassword(userId: string, hashedPassword: string): Promise<User | undefined>;
 
   // Module operations
   getModules(): Promise<Module[]>;
@@ -279,12 +280,35 @@ export class DatabaseStorage implements IStorage {
 
   async getUsersWithProgress(): Promise<UserWithProgress[]> {
     const allUsers = await this.getAllUsers();
+    const publishedModules = await this.getPublishedModules();
     const result: UserWithProgress[] = [];
 
     for (const user of allUsers) {
+      // Get quiz-based completion
       const attempts = await this.getAttempts(user.id);
       const passedAttempts = attempts.filter(a => a.passed);
-      const uniqueCompletedModules = new Set(passedAttempts.map(a => a.moduleId));
+      const quizCompletedModuleIds = new Set(passedAttempts.map(a => a.moduleId));
+
+      // Get step-based completion
+      const stepCompletedModuleIds = new Set<number>();
+      for (const module of publishedModules) {
+        const steps = await this.getModuleSteps(module.id);
+        if (steps.length > 0) {
+          // Check if all steps are completed for this module
+          const userProgress = await this.getUserModuleProgress(user.id, module.id);
+          const completedStepIds = new Set(
+            userProgress.filter(p => p.completedAt).map(p => p.stepId)
+          );
+          const allStepsCompleted = steps.every(step => completedStepIds.has(step.id));
+          if (allStepsCompleted) {
+            stepCompletedModuleIds.add(module.id);
+          }
+        }
+      }
+
+      // Combine both completion methods (union)
+      const allCompletedModuleIds = new Set([...Array.from(quizCompletedModuleIds), ...Array.from(stepCompletedModuleIds)]);
+
       const avgScore = attempts.length > 0
         ? Math.round(attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length)
         : 0;
@@ -292,8 +316,8 @@ export class DatabaseStorage implements IStorage {
 
       result.push({
         ...stripPassword(user),
-        modulesCompleted: uniqueCompletedModules.size,
-        totalModules: await this.getPublishedModules().then(m => m.length),
+        modulesCompleted: allCompletedModuleIds.size,
+        totalModules: publishedModules.length,
         totalAttempts: attempts.length,
         averageScore: avgScore,
         groups: userGroups,
@@ -307,19 +331,41 @@ export class DatabaseStorage implements IStorage {
     const user = await this.getUser(userId);
     if (!user) return undefined;
 
+    const publishedModules = await this.getPublishedModules();
+
+    // Get quiz-based completion
     const attempts = await this.getAttempts(userId);
     const passedAttempts = attempts.filter(a => a.passed);
-    const uniqueCompletedModules = new Set(passedAttempts.map(a => a.moduleId));
+    const quizCompletedModuleIds = new Set(passedAttempts.map(a => a.moduleId));
+
+    // Get step-based completion
+    const stepCompletedModuleIds = new Set<number>();
+    for (const module of publishedModules) {
+      const steps = await this.getModuleSteps(module.id);
+      if (steps.length > 0) {
+        const userProgress = await this.getUserModuleProgress(userId, module.id);
+        const completedStepIds = new Set(
+          userProgress.filter(p => p.completedAt).map(p => p.stepId)
+        );
+        const allStepsCompleted = steps.every(step => completedStepIds.has(step.id));
+        if (allStepsCompleted) {
+          stepCompletedModuleIds.add(module.id);
+        }
+      }
+    }
+
+    // Combine both completion methods (union)
+    const allCompletedModuleIds = new Set([...Array.from(quizCompletedModuleIds), ...Array.from(stepCompletedModuleIds)]);
+
     const avgScore = attempts.length > 0
       ? Math.round(attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length)
       : 0;
     const userGroupsList = await this.getUserGroups(userId);
 
-    const totalModules = await this.getPublishedModules().then(m => m.length);
     return {
       ...stripPassword(user),
-      modulesCompleted: uniqueCompletedModules.size,
-      totalModules,
+      modulesCompleted: allCompletedModuleIds.size,
+      totalModules: publishedModules.length,
       totalAttempts: attempts.length,
       averageScore: avgScore,
       groups: userGroupsList,
@@ -330,6 +376,15 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db
       .update(users)
       .set({ role, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async updateUserPassword(userId: string, hashedPassword: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ password: hashedPassword, updatedAt: new Date() })
       .where(eq(users.id, userId))
       .returning();
     return user;

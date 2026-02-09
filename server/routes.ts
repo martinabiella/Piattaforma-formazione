@@ -872,6 +872,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update user password (admin)
+  app.patch("/api/admin/users/:id/password", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const { password } = req.body;
+
+      if (!password || password.length < 6) {
+        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      }
+
+      // Hash password before saving
+      const { hashPassword } = await import("./auth");
+      const hashedPassword = await hashPassword(password);
+
+      const user = await storage.updateUserPassword(userId, hashedPassword);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Don't return the password in the response
+      const { password: _, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      console.error("Error updating user password:", error);
+      res.status(500).json({ message: "Failed to update user password" });
+    }
+  });
+
   // =========== Admin Group Routes ===========
 
   // Get all groups

@@ -46,7 +46,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Search, Shield, User, Eye, ChevronRight, Trophy, BookOpen, Users, UserPlus } from "lucide-react";
+import { Search, Shield, User, Eye, ChevronRight, Trophy, BookOpen, Users, UserPlus, KeyRound } from "lucide-react";
 import type { User as UserType, QuizAttemptWithDetails } from "@shared/schema";
 
 interface UserWithProgress extends UserType {
@@ -76,6 +76,7 @@ function UserDetailsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { toast } = useToast();
+  const [newPassword, setNewPassword] = useState("");
 
   const { data: userDetails, isLoading } = useQuery<UserWithProgress>({
     queryKey: ["/api/admin/users", user?.id],
@@ -98,6 +99,26 @@ function UserDetailsDialog({
       toast({
         title: "Error",
         description: `Failed to update user role: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updatePasswordMutation = useMutation({
+    mutationFn: async ({ userId, password }: { userId: string; password: string }) => {
+      return await apiRequest("PATCH", `/api/admin/users/${userId}/password`, { password });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Password Updated",
+        description: "User password has been updated successfully.",
+      });
+      setNewPassword("");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: `Failed to update password: ${error.message}`,
         variant: "destructive",
       });
     },
@@ -173,6 +194,28 @@ function UserDetailsDialog({
                 <SelectItem value="admin">Admin</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div>
+            <h4 className="font-medium mb-2">Change Password</h4>
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                placeholder="New password (min 6 characters)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="flex-1"
+                data-testid="input-new-password"
+              />
+              <Button
+                onClick={() => updatePasswordMutation.mutate({ userId: details.id, password: newPassword })}
+                disabled={updatePasswordMutation.isPending || newPassword.length < 6}
+                data-testid="button-save-password"
+              >
+                <KeyRound className="h-4 w-4 mr-1" />
+                {updatePasswordMutation.isPending ? "Saving..." : "Save"}
+              </Button>
+            </div>
           </div>
 
           {isLoading ? (

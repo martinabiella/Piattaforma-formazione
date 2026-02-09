@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, Route, Trash2, Edit2, BookOpen, Users, UserPlus, GripVertical } from "lucide-react";
+import { Plus, Route, Trash2, Edit2, BookOpen, Users } from "lucide-react";
 import type { TrainingPathway, Module, UserGroup, User, GroupPathwayAssignment, UserPathwayAssignment } from "@shared/schema";
 
 interface PathwayModule {
@@ -206,142 +206,6 @@ function CreatePathwayDialog({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-function AssignPathwayDialog({
-  pathway,
-  open,
-  onOpenChange,
-}: {
-  pathway: PathwayWithModules | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { toast } = useToast();
-  const [assignType, setAssignType] = useState<"group" | "user">("group");
-  const [selectedGroupId, setSelectedGroupId] = useState<string>("");
-  const [selectedUserId, setSelectedUserId] = useState<string>("");
-
-  const { data: groups } = useQuery<GroupWithMembers[]>({
-    queryKey: ["/api/admin/groups"],
-    enabled: open,
-  });
-
-  const { data: users } = useQuery<User[]>({
-    queryKey: ["/api/admin/users"],
-    enabled: open,
-  });
-
-  const assignMutation = useMutation({
-    mutationFn: async (data: { pathwayId: number; groupId?: number; userId?: string }) => {
-      if (data.groupId) {
-        return await apiRequest("POST", `/api/admin/pathways/${data.pathwayId}/assign-group`, { groupId: data.groupId });
-      } else {
-        return await apiRequest("POST", `/api/admin/pathways/${data.pathwayId}/assign-user`, { userId: data.userId });
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/pathways"] });
-      toast({
-        title: "Pathway Assigned",
-        description: "The pathway has been assigned successfully.",
-      });
-      setSelectedGroupId("");
-      setSelectedUserId("");
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to assign pathway.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  if (!pathway) return null;
-
-  const handleAssign = () => {
-    if (assignType === "group" && selectedGroupId) {
-      assignMutation.mutate({ pathwayId: pathway.id, groupId: parseInt(selectedGroupId) });
-    } else if (assignType === "user" && selectedUserId) {
-      assignMutation.mutate({ pathwayId: pathway.id, userId: selectedUserId });
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Assign Pathway</DialogTitle>
-          <DialogDescription>
-            Assign "{pathway.name}" to a group or individual user.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label>Assign To</Label>
-            <Select value={assignType} onValueChange={(v) => setAssignType(v as "group" | "user")}>
-              <SelectTrigger data-testid="select-assign-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="group">Group</SelectItem>
-                <SelectItem value="user">Individual User</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {assignType === "group" ? (
-            <div className="space-y-2">
-              <Label>Select Group</Label>
-              <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
-                <SelectTrigger data-testid="select-assign-group">
-                  <SelectValue placeholder="Choose a group" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups?.map((group) => (
-                    <SelectItem key={group.id} value={group.id.toString()}>
-                      {group.name} ({group.members.length} members)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label>Select User</Label>
-              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger data-testid="select-assign-user">
-                  <SelectValue placeholder="Choose a user" />
-                </SelectTrigger>
-                <SelectContent>
-                  {users?.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.firstName} {user.lastName} ({user.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleAssign}
-            disabled={
-              assignMutation.isPending ||
-              (assignType === "group" && !selectedGroupId) ||
-              (assignType === "user" && !selectedUserId)
-            }
-          >
-            {assignMutation.isPending ? "Assigning..." : "Assign"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 function PathwayDetailsDialog({
   pathway,
@@ -781,7 +645,6 @@ function EditPathwayDialog({
 export default function AdminPathways() {
   const [selectedPathway, setSelectedPathway] = useState<PathwayWithModules | null>(null);
   const [editPathway, setEditPathway] = useState<PathwayWithModules | null>(null);
-  const [assignPathway, setAssignPathway] = useState<PathwayWithModules | null>(null);
   const { toast } = useToast();
 
   const { data: pathways, isLoading } = useQuery<PathwayWithModules[]>({
@@ -864,15 +727,6 @@ export default function AdminPathways() {
                       <Edit2 className="h-4 w-4 mr-1" />
                       Edit
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setAssignPathway(pathway)}
-                      data-testid={`button-assign-pathway-${pathway.id}`}
-                    >
-                      <UserPlus className="h-4 w-4 mr-1" />
-                      Assign
-                    </Button>
                   </div>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -927,12 +781,6 @@ export default function AdminPathways() {
         pathway={editPathway}
         open={!!editPathway}
         onOpenChange={(open) => !open && setEditPathway(null)}
-      />
-
-      <AssignPathwayDialog
-        pathway={assignPathway}
-        open={!!assignPathway}
-        onOpenChange={(open) => !open && setAssignPathway(null)}
       />
     </AdminLayout>
   );
