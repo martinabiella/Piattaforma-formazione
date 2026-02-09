@@ -724,6 +724,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               blockType: blockData.blockType || 'text',
               content: blockData.content || null,
               imageUrl: blockData.imageUrl || null,
+              metadata: blockData.metadata || null,
               order: j + 1,
             })
             : await storage.createStepContentBlock({
@@ -731,6 +732,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               blockType: blockData.blockType || 'text',
               content: blockData.content || null,
               imageUrl: blockData.imageUrl || null,
+              metadata: blockData.metadata || null,
               order: j + 1,
             });
           if (block) resultBlocks.push(block);
@@ -1188,6 +1190,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error assigning pathway to user:", error);
       res.status(500).json({ message: "Failed to assign pathway to user" });
+    }
+  });
+
+  // Get pathway assignments
+  app.get("/api/admin/pathways/:id/assignments", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const pathwayId = parseInt(req.params.id);
+      if (isNaN(pathwayId)) {
+        return res.status(400).json({ message: "Invalid pathway ID" });
+      }
+
+      const assignments = await storage.getPathwayAssignments(pathwayId);
+      res.json(assignments);
+    } catch (error) {
+      console.error("Error fetching pathway assignments:", error);
+      res.status(500).json({ message: "Failed to fetch pathway assignments" });
     }
   });
 

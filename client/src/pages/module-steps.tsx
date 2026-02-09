@@ -22,6 +22,7 @@ import type { ModuleWithSteps, StepWithProgress } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Columns, ArrowRightLeft } from "lucide-react";
 
 interface CheckpointProps {
   step: StepWithProgress;
@@ -214,6 +215,79 @@ function StepNavItem({
     </button>
   );
 }
+
+function StepBlockRenderer({ block }: { block: any }) { // Using any broadly for now to match strict schema types vs runtime metadata
+  if (block.blockType === "split") {
+    const ratio = block.metadata?.splitRatio || "50-50";
+    const reverse = block.metadata?.reverseLayout || false;
+
+    // Calculate grid columns based on ratio
+    let gridCols = "grid-cols-1 md:grid-cols-2"; // Default 50-50
+    if (ratio === "30-70") gridCols = "grid-cols-1 md:grid-cols-[3fr_7fr]";
+    if (ratio === "70-30") gridCols = "grid-cols-1 md:grid-cols-[7fr_3fr]";
+
+    return (
+      <div className={cn("grid gap-8 items-start mb-8", gridCols)} data-testid={`content-block-${block.id}`}>
+        <div className={cn("prose prose-lg dark:prose-invert max-w-none", reverse && "md:order-2")}>
+          <div dangerouslySetInnerHTML={{ __html: block.content }} />
+        </div>
+        <div className={cn("rounded-lg overflow-hidden border bg-muted", reverse && "md:order-1")}>
+          {block.imageUrl ? (
+            <img
+              src={block.imageUrl}
+              alt="Step content"
+              className="w-full h-auto object-cover"
+            />
+          ) : (
+            <div className="flex items-center justify-center p-12 text-muted-foreground bg-muted/50">
+              <span className="text-sm">No image</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (block.blockType === "image") {
+    return (
+      <div className="mb-8" data-testid={`content-block-${block.id}`}>
+        {block.imageUrl && (
+          <div className="rounded-lg overflow-hidden border bg-muted">
+            <img
+              src={block.imageUrl}
+              alt="Step content"
+              className="w-full h-auto max-h-[600px] object-contain mx-auto"
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Default to text (or legacy blocks)
+  return (
+    <div className="mb-8" data-testid={`content-block-${block.id}`}>
+      {/* Legacy support: if it has image but no specific type, show it top like before */}
+      {(!block.blockType || block.blockType === 'text') && block.imageUrl && (
+        <div className="mb-6 rounded-lg overflow-hidden">
+          <img
+            src={block.imageUrl}
+            alt="Step content"
+            className="w-full h-auto max-h-96 object-cover"
+          />
+        </div>
+      )}
+
+      {block.content && (
+        <div
+          className="prose prose-lg dark:prose-invert max-w-none"
+          dangerouslySetInnerHTML={{ __html: block.content }}
+        />
+      )}
+    </div>
+  );
+}
+
 
 function LoadingSkeleton() {
   return (
@@ -482,25 +556,11 @@ export default function ModuleSteps() {
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Content blocks */}
-                {currentStep?.contentBlocks.map((block) => (
-                  <div key={block.id} data-testid={`content-block-${block.id}`}>
-                    {block.imageUrl && (
-                      <div className="mb-4 rounded-lg overflow-hidden">
-                        <img
-                          src={block.imageUrl}
-                          alt="Step content"
-                          className="w-full h-auto max-h-80 object-cover"
-                        />
-                      </div>
-                    )}
-                    {block.content && (
-                      <div
-                        className="prose prose-lg dark:prose-invert max-w-none"
-                        dangerouslySetInnerHTML={{ __html: block.content }}
-                      />
-                    )}
-                  </div>
-                ))}
+                <div className="space-y-2">
+                  {currentStep?.contentBlocks.map((block) => (
+                    <StepBlockRenderer key={block.id} block={block} />
+                  ))}
+                </div>
 
                 {/* Checkpoint questions */}
                 {currentStep?.checkpoints && currentStep.checkpoints.length > 0 && currentStep.isUnlocked && (

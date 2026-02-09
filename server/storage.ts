@@ -164,6 +164,7 @@ export interface IStorage {
   assignPathwayToUser(assignment: InsertUserPathwayAssignment): Promise<UserPathwayAssignment>;
   removeGroupPathwayAssignment(groupId: number, pathwayId: number): Promise<void>;
   removeUserPathwayAssignment(userId: string, pathwayId: number): Promise<void>;
+  getPathwayAssignments(pathwayId: number): Promise<{ groups: (GroupPathwayAssignment & { group: UserGroup })[], users: (UserPathwayAssignment & { user: User })[] }>;
 
   // Combined operations
   getModuleWithProgress(moduleId: number, userId: string): Promise<ModuleWithProgress | undefined>;
@@ -798,6 +799,37 @@ export class DatabaseStorage implements IStorage {
     );
   }
 
+  async getPathwayAssignments(pathwayId: number): Promise<{ groups: (GroupPathwayAssignment & { group: UserGroup })[], users: (UserPathwayAssignment & { user: User })[] }> {
+    // Get group assignments
+    const groupAssignments = await db.select().from(groupPathwayAssignments)
+      .where(eq(groupPathwayAssignments.pathwayId, pathwayId));
+
+    const groupResults: (GroupPathwayAssignment & { group: UserGroup })[] = [];
+    for (const ga of groupAssignments) {
+      const group = await this.getGroup(ga.groupId);
+      if (group) {
+        groupResults.push({ ...ga, group });
+      }
+    }
+
+    // Get user assignments
+    const userAssignments = await db.select().from(userPathwayAssignments)
+      .where(eq(userPathwayAssignments.pathwayId, pathwayId));
+
+    const userResults: (UserPathwayAssignment & { user: User })[] = [];
+    for (const ua of userAssignments) {
+      const user = await this.getUser(ua.userId);
+      if (user) {
+        userResults.push({ ...ua, user: stripPassword(user) as User });
+      }
+    }
+
+    return {
+      groups: groupResults,
+      users: userResults,
+    };
+  }
+
   // Combined operations
   async getModuleWithProgress(moduleId: number, userId: string): Promise<ModuleWithProgress | undefined> {
     const module = await this.getModule(moduleId);
@@ -911,10 +943,38 @@ export class DatabaseStorage implements IStorage {
 
       const { status, score } = await calculateStatus(mod);
 
+      // Get detailed step info for progress bar
+      const steps = await this.getModuleSteps(mod.id);
+      const userProgress = await this.getUserModuleProgress(userId, mod.id);
+      const completedStepsCount = userProgress.filter(p => p.completedAt).length;
+
+      // Calculate current step index (first incomplete step)
+      let currentStepIndex = 0;
+      if (steps.length > 0) {
+        if (status === 'completed') {
+          currentStepIndex = steps.length - 1;
+        } else {
+          // Find the first step that is NOT completed
+          // Note: This logic implies steps are ordered. 
+          // If we wanted to be more precise we'd check step order, but usually completed count corresponds to index for linear progression.
+          // Better approach: Find the first step index where there is NO completion record or completedAt is null
+          for (let i = 0; i < steps.length; i++) {
+            const isCompleted = userProgress.some(p => p.stepId === steps[i].id && p.completedAt);
+            if (!isCompleted) {
+              currentStepIndex = i;
+              break;
+            }
+          }
+        }
+      }
+
       result.push({
         ...mod,
         status,
         lastAttemptScore: score,
+        completedSteps: completedStepsCount,
+        totalSteps: steps.length,
+        currentStepIndex
       });
     }
 
@@ -990,11 +1050,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createStepContentBlock(block: InsertStepContentBlock): Promise<StepContentBlock> {
+    // @ts-ignore
     const [created] = await db.insert(stepContentBlocks).values(block).returning();
     return created;
   }
 
   async updateStepContentBlock(id: number, block: Partial<InsertStepContentBlock>): Promise<StepContentBlock | undefined> {
+    // @ts-ignore
     const [updated] = await db.update(stepContentBlocks).set({ ...block, updatedAt: new Date() }).where(eq(stepContentBlocks.id, id)).returning();
     return updated;
   }

@@ -207,6 +207,10 @@ export const stepContentBlocks = pgTable("step_content_blocks", {
   title: varchar("title", { length: 255 }),
   content: text("content"),
   imageUrl: varchar("image_url"),
+  metadata: jsonb("metadata").$type<{
+    splitRatio?: "30-70" | "50-50" | "70-30";
+    reverseLayout?: boolean;
+  }>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -565,6 +569,9 @@ export type InsertUserCheckpointProgress = z.infer<typeof insertUserCheckpointPr
 export type ModuleWithProgress = Module & {
   status: 'not_started' | 'in_progress' | 'completed';
   lastAttemptScore?: number;
+  completedSteps?: number;
+  totalSteps?: number;
+  currentStepIndex?: number;
   sections?: ModuleSection[];
   contentBlocks?: ContentBlock[];
   quiz?: Quiz & { questions?: QuizQuestion[] };
