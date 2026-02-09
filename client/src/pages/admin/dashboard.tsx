@@ -5,10 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { 
-  BookOpen, 
-  Users, 
-  ClipboardCheck, 
+import {
+  BookOpen,
+  Users,
+  ClipboardCheck,
   Trophy,
   Plus,
   ArrowRight,
@@ -20,7 +20,7 @@ interface AdminStats {
   totalModules: number;
   publishedModules: number;
   totalUsers: number;
-  totalAttempts: number;
+
   passRate: number;
 }
 
@@ -42,14 +42,7 @@ function StatsCards({ stats }: { stats: AdminStats | undefined; isLoading: boole
       color: "text-blue-600 dark:text-blue-400",
       bg: "bg-blue-100 dark:bg-blue-900/30",
     },
-    {
-      title: "Quiz Attempts",
-      value: stats?.totalAttempts ?? 0,
-      icon: ClipboardCheck,
-      description: "All time attempts",
-      color: "text-amber-600 dark:text-amber-400",
-      bg: "bg-amber-100 dark:bg-amber-900/30",
-    },
+
     {
       title: "Pass Rate",
       value: `${stats?.passRate ?? 0}%`,
@@ -116,8 +109,8 @@ function RecentActivity({ attempts }: { attempts: QuizAttemptWithDetails[] }) {
       <CardContent>
         <div className="space-y-4">
           {attempts.slice(0, 5).map((attempt, index) => (
-            <div 
-              key={attempt.id} 
+            <div
+              key={attempt.id}
               className="flex items-center justify-between py-2 border-b last:border-0"
               data-testid={`activity-item-${index}`}
             >
@@ -127,7 +120,7 @@ function RecentActivity({ attempts }: { attempts: QuizAttemptWithDetails[] }) {
                 </div>
                 <div>
                   <p className="text-sm font-medium">
-                    {attempt.user?.firstName 
+                    {attempt.user?.firstName
                       ? `${attempt.user.firstName} ${attempt.user.lastName || ""}`
                       : attempt.user?.email || "Unknown User"
                     }
@@ -142,7 +135,7 @@ function RecentActivity({ attempts }: { attempts: QuizAttemptWithDetails[] }) {
                   {attempt.score}%
                 </Badge>
                 <span className="text-xs text-muted-foreground">
-                  {attempt.createdAt 
+                  {attempt.createdAt
                     ? new Date(attempt.createdAt).toLocaleDateString()
                     : "N/A"
                   }
@@ -255,7 +248,7 @@ export default function AdminDashboard() {
       ) : (
         <>
           <StatsCards stats={stats} isLoading={statsLoading} />
-          
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
               <RecentActivity attempts={recentAttempts || []} />

@@ -11,6 +11,11 @@ import {
   insertTrainingPathwaySchema,
   insertContentBlockSchema,
 } from "@shared/schema";
+import multer from "multer";
+import { parseUserFile, createUsersInBulk } from "./bulk-users";
+
+// Setup multer for memory storage
+const upload = multer({ storage: multer.memoryStorage() });
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -284,6 +289,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // =========== Admin Routes ===========
 
+  // Bulk user upload
+  app.post("/api/admin/users/bulk", isAuthenticated, isAdmin, upload.single("file"), async (req: any, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const groupId = req.body.groupId ? parseInt(req.body.groupId) : undefined;
+
+      // Parse file content
+      const parsedUsers = await parseUserFile(req.file.buffer);
+
+      if (parsedUsers.length === 0) {
+        return res.status(400).json({ message: "No users found in file" });
+      }
+
+      // Create users
+      const result = await createUsersInBulk(parsedUsers, groupId);
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("Bulk upload error:", error);
+      res.status(500).json({ message: "Failed to process bulk upload: " + error.message });
+    }
+  });
+
   // Admin stats
   app.get("/api/admin/stats", isAuthenticated, isAdmin, async (req, res) => {
     try {
@@ -299,7 +330,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalModules: allModules.length,
         publishedModules: publishedModules.length,
         totalUsers: userCount,
-        totalAttempts: attemptCount,
+
         passRate: attemptCount > 0 ? Math.round((passedCount / attemptCount) * 100) : 0,
         totalGroups: groups.length,
         totalPathways: pathways.length,

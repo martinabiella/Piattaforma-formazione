@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -47,7 +48,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Search, Shield, User, Eye, ChevronRight, Trophy, BookOpen, Users, UserPlus, KeyRound } from "lucide-react";
-import type { User as UserType, QuizAttemptWithDetails } from "@shared/schema";
+import type { User as UserType, QuizAttemptWithDetails, UserGroup } from "@shared/schema";
 
 interface UserWithProgress extends UserType {
   modulesCompleted: number;
@@ -168,13 +169,7 @@ function UserDetailsDialog({
                 <p className="text-xs text-muted-foreground">Average Score</p>
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <ChevronRight className="h-6 w-6 mx-auto mb-2 text-emerald-500" />
-                <p className="text-2xl font-bold">{attempts.length}</p>
-                <p className="text-xs text-muted-foreground">Quiz Attempts</p>
-              </CardContent>
-            </Card>
+
           </div>
 
           <div>
@@ -432,6 +427,174 @@ function CreateUserDialog() {
   );
 }
 
+// Bulk Upload Dialog
+function BulkUploadDialog() {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [groupId, setGroupId] = useState<string>("no-group");
+  const { toast } = useToast();
+  const [result, setResult] = useState<{ created: number; failed: { row: number; error: string }[] } | null>(null);
+
+  const { data: groups } = useQuery<UserGroup[]>({
+    queryKey: ["/api/admin/groups"],
+    enabled: open,
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: async ({ file, groupId }: { file: File; groupId?: number }) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (groupId) {
+        formData.append("groupId", groupId.toString());
+      }
+
+      const res = await fetch("/api/admin/users/bulk", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Upload failed");
+      }
+
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      setResult(data);
+      toast({
+        title: "Bulk Upload Complete",
+        description: `Created ${data.created} users. ${data.failed.length} failed.`,
+        variant: "default",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Upload Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleUpload = () => {
+    if (!file) return;
+    const gid = groupId === "no-group" ? undefined : parseInt(groupId);
+    uploadMutation.mutate({ file, groupId: gid });
+  };
+
+  const handleDownloadTemplate = () => {
+    const headers = ["username", "password", "firstName", "lastName", "email", "role"];
+    const csvContent = headers.join(",") + "\nuser1,pass123,John,Doe,john@example.com,user";
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "users_template.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const resetState = () => {
+    setFile(null);
+    setResult(null);
+    setGroupId("no-group");
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(val) => { setOpen(val); if (!val) resetState(); }}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="mr-2">
+          <Users className="h-4 w-4 mr-2" />
+          Bulk Upload
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Bulk User Upload</DialogTitle>
+          <DialogDescription>
+            Upload a CSV or Excel file to create multiple users at once.
+          </DialogDescription>
+        </DialogHeader>
+
+        {!result ? (
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Template</Label>
+              <div>
+                <Button variant="outline" size="sm" onClick={handleDownloadTemplate}>
+                  Download CSV Template
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="file">File (CSV, XLS, XLSX)</Label>
+              <Input
+                id="file"
+                type="file"
+                accept=".csv, .xls, .xlsx"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="group">Assign to Group (Optional)</Label>
+              <Select value={groupId} onValueChange={setGroupId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a group" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="no-group">None</SelectItem>
+                  {groups?.map((g) => (
+                    <SelectItem key={g.id} value={g.id.toString()}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        ) : (
+          <div className="py-4 space-y-4">
+            <div className="flex items-center gap-2 text-green-600">
+              <Trophy className="h-5 w-5" />
+              <span className="font-medium">{result.created} users created successfully</span>
+            </div>
+
+            {result.failed.length > 0 && (
+              <div className="space-y-2">
+                <p className="font-medium text-destructive">Failed Rows ({result.failed.length})</p>
+                <div className="max-h-[200px] overflow-auto border rounded-md p-2 text-sm bg-muted/50">
+                  {result.failed.map((f, i) => (
+                    <div key={i} className="py-1 border-b last:border-0">
+                      <span className="font-mono font-bold mr-2">Row {f.row}:</span>
+                      <span className="text-muted-foreground">{f.error}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          {!result ? (
+            <Button onClick={handleUpload} disabled={!file || uploadMutation.isPending}>
+              {uploadMutation.isPending ? "Uploading..." : "Upload"}
+            </Button>
+          ) : (
+            <Button onClick={() => setOpen(false)}>Close</Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AdminUsers() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -466,7 +629,10 @@ export default function AdminUsers() {
                 <CardTitle>All Users</CardTitle>
                 <CardDescription>View and manage user accounts and progress</CardDescription>
               </div>
-              <CreateUserDialog />
+              <div className="flex items-center">
+                <BulkUploadDialog />
+                <CreateUserDialog />
+              </div>
             </div>
           </CardHeader>
           <CardContent>

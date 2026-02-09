@@ -204,6 +204,9 @@ export interface IStorage {
 
   // Step-based module with progress
   getModuleWithSteps(moduleId: number, userId: string): Promise<ModuleWithSteps | undefined>;
+
+  // Helper for scoring
+  getUserGlobalStepStats(userId: string): Promise<{ totalStepScore: number; stepCount: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -309,19 +312,37 @@ export class DatabaseStorage implements IStorage {
       // Combine both completion methods (union)
       const allCompletedModuleIds = new Set([...Array.from(quizCompletedModuleIds), ...Array.from(stepCompletedModuleIds)]);
 
-      const avgScore = attempts.length > 0
-        ? Math.round(attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length)
+      // Get step stats for unified scoring
+      const { totalStepScore, stepCount } = await this.getUserGlobalStepStats(user.id);
+
+      // Calculate unique passed quiz stats
+      const uniqueQuizScores = new Map<number, number>();
+      for (const attempt of passedAttempts) {
+        const currentMax = uniqueQuizScores.get(attempt.moduleId) || 0;
+        if (attempt.score > currentMax) {
+          uniqueQuizScores.set(attempt.moduleId, attempt.score);
+        }
+      }
+      const uniquePassedQuizScoreSum = Array.from(uniqueQuizScores.values()).reduce((a, b) => a + b, 0);
+      const uniquePassedQuizCount = uniqueQuizScores.size;
+
+      const totalCount = uniquePassedQuizCount + stepCount;
+      const totalScoreSum = uniquePassedQuizScoreSum + totalStepScore;
+
+      const avgScore = totalCount > 0
+        ? Math.round(totalScoreSum / totalCount)
         : 0;
+
       const userGroups = await this.getUserGroups(user.id);
 
       result.push({
         ...stripPassword(user),
         modulesCompleted: allCompletedModuleIds.size,
         totalModules: publishedModules.length,
-        totalAttempts: attempts.length,
         averageScore: avgScore,
         groups: userGroups,
-      } as UserWithProgress);
+      } as unknown as UserWithProgress);
+
     }
 
     return result;
@@ -357,19 +378,36 @@ export class DatabaseStorage implements IStorage {
     // Combine both completion methods (union)
     const allCompletedModuleIds = new Set([...Array.from(quizCompletedModuleIds), ...Array.from(stepCompletedModuleIds)]);
 
-    const avgScore = attempts.length > 0
-      ? Math.round(attempts.reduce((sum, a) => sum + a.score, 0) / attempts.length)
+    // Get step stats for unified scoring
+    const { totalStepScore, stepCount } = await this.getUserGlobalStepStats(user.id);
+
+    // Calculate unique passed quiz stats
+    const uniqueQuizScores = new Map<number, number>();
+    for (const attempt of passedAttempts) {
+      const currentMax = uniqueQuizScores.get(attempt.moduleId) || 0;
+      if (attempt.score > currentMax) {
+        uniqueQuizScores.set(attempt.moduleId, attempt.score);
+      }
+    }
+    const uniquePassedQuizScoreSum = Array.from(uniqueQuizScores.values()).reduce((a, b) => a + b, 0);
+    const uniquePassedQuizCount = uniqueQuizScores.size;
+
+    const totalCount = uniquePassedQuizCount + stepCount;
+    const totalScoreSum = uniquePassedQuizScoreSum + totalStepScore;
+
+    const avgScore = totalCount > 0
+      ? Math.round(totalScoreSum / totalCount)
       : 0;
+
     const userGroupsList = await this.getUserGroups(userId);
 
     return {
       ...stripPassword(user),
       modulesCompleted: allCompletedModuleIds.size,
       totalModules: publishedModules.length,
-      totalAttempts: attempts.length,
       averageScore: avgScore,
       groups: userGroupsList,
-    } as UserWithProgress;
+    } as unknown as UserWithProgress;
   }
 
   async updateUserRole(userId: string, role: string): Promise<User | undefined> {
@@ -1312,7 +1350,51 @@ export class DatabaseStorage implements IStorage {
     return { success: true };
   }
 
-  // Step-based module with progress
+  async getUserGlobalStepStats(userId: string): Promise<{ totalStepScore: number; stepCount: number }> {
+    // Get all completed steps for this user
+    // We join with moduleSteps to ensure validity
+    const completedSteps = await db.select({
+      stepId: userStepProgress.stepId,
+      completedAt: userStepProgress.completedAt,
+      correct: userStepProgress.correct
+    })
+      .from(userStepProgress)
+      .innerJoin(moduleSteps, eq(userStepProgress.stepId, moduleSteps.id))
+      .where(eq(userStepProgress.userId, userId));
+
+    const actuallyCompletedSteps = completedSteps.filter(s => s.completedAt);
+    let totalStepScore = 0;
+
+    for (const stepProgress of actuallyCompletedSteps) {
+      // Check if this step has checkpoints
+      const checkpoints = await this.getStepCheckpoints(stepProgress.stepId);
+
+      let score = 0;
+      if (checkpoints.length === 0) {
+        // No checkpoints (content only) -> 100% score if completed
+        score = 100;
+      } else {
+        // Has checkpoints -> calculate percentage correct
+        const checkpointIds = checkpoints.map(c => c.id);
+        const userAnswers = await db.select().from(userCheckpointProgress)
+          .where(and(
+            eq(userCheckpointProgress.userId, userId),
+            inArray(userCheckpointProgress.checkpointId, checkpointIds)
+          ));
+
+        const correctCount = userAnswers.filter(a => a.correct).length;
+        score = Math.round((correctCount / checkpoints.length) * 100);
+      }
+      totalStepScore += score;
+    }
+
+    return {
+      totalStepScore,
+      stepCount: actuallyCompletedSteps.length
+    };
+  }
+
+
   async getModuleWithSteps(moduleId: number, userId: string): Promise<ModuleWithSteps | undefined> {
     const mod = await this.getModule(moduleId);
     if (!mod) return undefined;
