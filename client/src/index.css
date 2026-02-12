@@ -286,3 +286,10 @@
     inset: -1px;
   }
 }
+
+@layer components {
+  .prose strong {
+    color: inherit;
+    font-weight: 600;
+  }
+}

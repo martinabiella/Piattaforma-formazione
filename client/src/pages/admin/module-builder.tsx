@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import { AdminLayout } from "@/components/admin-layout";
+import { RichTextEditor } from "@/components/rich-text-editor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -412,14 +413,11 @@ function SortableContentBlock({
             {/* Text Input */}
             {(block.blockType === "text" || block.blockType === "split") && (
               <div className={cn("space-y-2", block.blockType === "split" && block.metadata?.reverseLayout && "order-2")}>
-                <Label>Content (HTML)</Label>
-                <Textarea
-                  value={block.content}
-                  onChange={(e) => onChange({ content: e.target.value })}
-                  placeholder="Enter content (HTML supported)"
-                  rows={block.blockType === "split" ? 8 : 4}
-                  className="font-mono text-sm"
-                  data-testid={`input-block-content-${stepIndex}-${blockIndex}`}
+                <Label>Content</Label>
+                <RichTextEditor
+                  content={block.content}
+                  onChange={(html) => onChange({ content: html })}
+                  placeholder="Start typing your content..."
                 />
               </div>
             )}
