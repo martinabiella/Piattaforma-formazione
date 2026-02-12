@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
@@ -13,10 +14,10 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { 
-  Save, 
-  Plus, 
-  Trash2, 
+import {
+  Save,
+  Plus,
+  Trash2,
   GripVertical,
   ArrowLeft,
   HelpCircle,
@@ -50,6 +51,7 @@ interface CheckpointFormData {
   options: string[];
   correctOptionIndex: number;
   explanation: string;
+  isEvaluated: boolean;
 }
 
 function LoadingSkeleton() {
@@ -92,8 +94,8 @@ function CheckpointEditor({
             <HelpCircle className="h-5 w-5 text-primary" />
             <span className="text-sm font-medium">Checkpoint Question (Required)</span>
           </div>
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="icon"
             onClick={onRemove}
             data-testid="button-remove-checkpoint"
@@ -113,7 +115,7 @@ function CheckpointEditor({
             data-testid="input-checkpoint-question"
           />
         </div>
-        
+
         <div className="space-y-2">
           <Label>Answer Options (click to mark correct)</Label>
           {checkpoint.options.map((option, idx) => (
@@ -139,6 +141,22 @@ function CheckpointEditor({
               />
             </div>
           ))}
+        </div>
+
+        <Separator />
+
+        <div className="flex items-center justify-between space-x-2">
+          <div className="space-y-0.5">
+            <Label className="text-base">Include in Final Evaluation</Label>
+            <p className="text-sm text-muted-foreground">
+              If enabled, this question will count towards the module score. If disabled, it sends feedback but doesn't affect the grade.
+            </p>
+          </div>
+          <Switch
+            checked={checkpoint.isEvaluated}
+            onCheckedChange={(checked) => onChange({ ...checkpoint, isEvaluated: checked })}
+            data-testid="switch-checkpoint-evaluation"
+          />
         </div>
 
         <div className="space-y-2">
@@ -202,6 +220,7 @@ function StepEditor({
         options: ["", "", "", ""],
         correctOptionIndex: 0,
         explanation: "",
+        isEvaluated: true,
       },
     });
   };
@@ -232,8 +251,8 @@ function StepEditor({
             {step.checkpoint && (
               <Badge variant="secondary" className="text-xs">Has Checkpoint</Badge>
             )}
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
               onClick={onRemove}
               data-testid={`button-remove-step-${index}`}
@@ -243,7 +262,7 @@ function StepEditor({
           </div>
         </div>
       </CardHeader>
-      
+
       {isExpanded && (
         <CardContent className="space-y-6">
           <div className="space-y-2">
@@ -279,8 +298,8 @@ function StepEditor({
                     <Badge variant="outline" className="text-xs">
                       Content Block {blockIndex + 1}
                     </Badge>
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       size="icon"
                       className="h-6 w-6"
                       onClick={() => handleRemoveContentBlock(blockIndex)}
@@ -388,6 +407,7 @@ export default function AdminStepEditor() {
           options: s.checkpoint.options || ["", "", "", ""],
           correctOptionIndex: s.checkpoint.correctOptionIndex,
           explanation: s.checkpoint.explanation || "",
+          isEvaluated: s.checkpoint.isEvaluated !== undefined ? s.checkpoint.isEvaluated : true,
         } : null,
       })));
       setHasChanges(false);
@@ -415,6 +435,7 @@ export default function AdminStepEditor() {
             options: s.checkpoint.options || ["", "", "", ""],
             correctOptionIndex: s.checkpoint.correctOptionIndex,
             explanation: s.checkpoint.explanation || "",
+            isEvaluated: s.checkpoint.isEvaluated !== undefined ? s.checkpoint.isEvaluated : true,
           } : null,
         })));
       }
@@ -506,7 +527,7 @@ export default function AdminStepEditor() {
               <Plus className="h-4 w-4 mr-2" />
               Add Step
             </Button>
-            <Button 
+            <Button
               onClick={handleSave}
               disabled={!hasChanges || saveSteps.isPending}
               data-testid="button-save-steps"
@@ -550,7 +571,7 @@ export default function AdminStepEditor() {
         {hasChanges && (
           <div className="fixed bottom-4 right-4 bg-background border shadow-lg rounded-lg p-4 flex items-center gap-4">
             <span className="text-sm text-muted-foreground">You have unsaved changes</span>
-            <Button 
+            <Button
               onClick={handleSave}
               disabled={saveSteps.isPending}
               data-testid="button-save-floating"

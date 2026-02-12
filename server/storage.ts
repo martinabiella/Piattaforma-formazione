@@ -1177,6 +1177,7 @@ export class DatabaseStorage implements IStorage {
       correctOptionIndex: checkpoint.correctOptionIndex,
       explanation: checkpoint.explanation,
       order: checkpoint.order || 1,
+      isEvaluated: checkpoint.isEvaluated !== undefined ? checkpoint.isEvaluated : true,
     };
     const [created] = await db.insert(stepCheckpoints).values(data).returning();
     return created;
@@ -1189,6 +1190,7 @@ export class DatabaseStorage implements IStorage {
     if (checkpoint.correctOptionIndex !== undefined) data.correctOptionIndex = checkpoint.correctOptionIndex;
     if (checkpoint.explanation !== undefined) data.explanation = checkpoint.explanation;
     if (checkpoint.order !== undefined) data.order = checkpoint.order;
+    if (checkpoint.isEvaluated !== undefined) data.isEvaluated = checkpoint.isEvaluated;
 
     const [updated] = await db.update(stepCheckpoints)
       .set(data)
@@ -1289,12 +1291,24 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(userCheckpointProgress.userId, userId), inArray(userCheckpointProgress.checkpointId, stepCheckpointIds)));
 
     const allAnswered = checkpoints.every(cp => stepProgress.some(p => p.checkpointId === cp.id));
-    const allCorrect = checkpoints.every(cp => stepProgress.find(p => p.checkpointId === cp.id)?.correct);
+
+    // Only require EVALUATED checkpoints to be correct for the step to be considered "correct"
+    // If a step has no evaluated checkpoints, it's considered correct if all checkpoints are answered.
+    const evaluatedCheckpoints = checkpoints.filter(cp => cp.isEvaluated);
+
+    let allCorrect = false;
+    if (evaluatedCheckpoints.length > 0) {
+      allCorrect = evaluatedCheckpoints.every(cp => stepProgress.find(p => p.checkpointId === cp.id)?.correct);
+    } else {
+      // If no checkpoints are evaluated, we just need them to be answered (which is checked by allAnswered)
+      // or we can say it's always "correct" in terms of passing, but score will be handled separately.
+      // Let's say allCorrect = true if allAnswered, effectively making non-evaluated steps "passable" by just doing them.
+      allCorrect = true;
+    }
 
     // Update overall step progress
-    // Step is considered "completed" if all checkpoints are answered (and maybe correct?)
-    // Existing logic: correct = last answer correct.
-    // New logic: correct = all answers correct.
+    // Step is considered "completed" if all checkpoints are answered
+    // logic: correct = all EVALUATED answers correct.
 
     if (allAnswered) {
       const existingStepProgress = await this.getUserStepProgress(userId, stepId);
@@ -1369,13 +1383,16 @@ export class DatabaseStorage implements IStorage {
       // Check if this step has checkpoints
       const checkpoints = await this.getStepCheckpoints(stepProgress.stepId);
 
+      // Filter for evaluated checkpoints
+      const evaluatedCheckpoints = checkpoints.filter(c => c.isEvaluated);
+
       let score = 0;
-      if (checkpoints.length === 0) {
-        // No checkpoints (content only) -> 100% score if completed
+      if (evaluatedCheckpoints.length === 0) {
+        // No evaluated checkpoints (content only OR non-evaluated checkpoints) -> 100% score if completed
         score = 100;
       } else {
-        // Has checkpoints -> calculate percentage correct
-        const checkpointIds = checkpoints.map(c => c.id);
+        // Has evaluated checkpoints -> calculate percentage correct based on EVALUATED ones only
+        const checkpointIds = evaluatedCheckpoints.map(c => c.id);
         const userAnswers = await db.select().from(userCheckpointProgress)
           .where(and(
             eq(userCheckpointProgress.userId, userId),
@@ -1383,7 +1400,7 @@ export class DatabaseStorage implements IStorage {
           ));
 
         const correctCount = userAnswers.filter(a => a.correct).length;
-        score = Math.round((correctCount / checkpoints.length) * 100);
+        score = Math.round((correctCount / evaluatedCheckpoints.length) * 100);
       }
       totalStepScore += score;
     }
@@ -1452,7 +1469,47 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Calculate module score
-    const moduleScore = steps.length > 0 ? Math.round((totalCorrect / steps.length) * 100) : undefined;
+    // Consistency Fix: Use the same logic as getUserGlobalStepStats to ensure user and admin see the same score
+    let totalModuleScore = 0;
+    let scoredStepsCount = 0;
+
+    for (const step of steps) {
+      const progress = progressMap.get(step.id);
+      // Only count completed steps
+      if (progress?.completedAt) {
+        const checkpoints = await this.getStepCheckpoints(step.id);
+        const evaluatedCheckpoints = checkpoints.filter(c => c.isEvaluated);
+
+        let stepScore = 0;
+        if (evaluatedCheckpoints.length === 0) {
+          stepScore = 100;
+        } else {
+          // Calculate percentage of evaluated checkpoints correct
+          let correctCount = 0;
+          for (const cp of evaluatedCheckpoints) {
+            const cpProgress = checkpointProgressMap.get(cp.id);
+            if (cpProgress?.correct) {
+              correctCount++;
+            }
+          }
+          stepScore = Math.round((correctCount / evaluatedCheckpoints.length) * 100);
+        }
+        totalModuleScore += stepScore;
+        scoredStepsCount++;
+      }
+    }
+
+    // Average score across all steps (completed or not? getUserGlobalStepStats divides by completed count...)
+    // Wait, getUserGlobalStepStats returns { totalStepScore, stepCount } where stepCount is COMPLETED steps.
+    // getUsersWithProgress calculates average based on completed steps.
+
+    // For module display, we usually show score relative to TOTAL steps if completed, or just current score?
+    // "Module Score" usually implies final score.
+    // If status is 'completed', we should divide by total steps (which should equal completed steps).
+    // If 'in_progress', maybe we show current average?
+    // Let's align with: Average score of COMPLETED steps.
+
+    const moduleScore = scoredStepsCount > 0 ? Math.round(totalModuleScore / scoredStepsCount) : undefined;
 
     // Determine status
     let status: 'not_started' | 'in_progress' | 'completed' = 'not_started';

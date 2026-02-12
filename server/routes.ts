@@ -783,6 +783,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 options: cp.options,
                 correctOptionIndex: cp.correctOptionIndex ?? 0,
                 explanation: cp.explanation || null,
+                isEvaluated: cp.isEvaluated !== undefined ? cp.isEvaluated : true,
                 order: k + 1,
               });
               checkpoints.push(checkpoint);
@@ -799,6 +800,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               options: cp.options,
               correctOptionIndex: cp.correctOptionIndex ?? 0,
               explanation: cp.explanation || null,
+              isEvaluated: cp.isEvaluated !== undefined ? cp.isEvaluated : true,
               order: 1,
             });
             checkpoints.push(checkpoint);

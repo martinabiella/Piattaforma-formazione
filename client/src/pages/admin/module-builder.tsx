@@ -89,6 +89,7 @@ interface CheckpointFormData {
   options: string[];
   correctOptionIndex: number;
   explanation: string;
+  isEvaluated: boolean;
 }
 
 interface CheckpointEditorProps {
@@ -100,10 +101,10 @@ interface CheckpointEditorProps {
   onRequiredChange: (required: boolean) => void;
   onRemove: () => void;
 }
-
 function CheckpointEditor({
   checkpoint,
   stepIndex,
+  checkpointIndex,
   checkpointRequired,
   onChange,
   onRequiredChange,
@@ -145,6 +146,16 @@ function CheckpointEditor({
               />
               <Label htmlFor={`required-${stepIndex}`}>Required to continue</Label>
             </div>
+
+            <div className="flex items-center gap-2 mr-4">
+              <Switch
+                id={`evaluated-${stepIndex}-${checkpointIndex}`}
+                checked={checkpoint.isEvaluated}
+                onCheckedChange={(checked) => onChange({ ...checkpoint, isEvaluated: checked })}
+              />
+              <Label htmlFor={`evaluated-${stepIndex}-${checkpointIndex}`}>Scored</Label>
+            </div>
+
             <Button
               variant="ghost"
               size="icon"
@@ -207,8 +218,14 @@ function CheckpointEditor({
             rows={2}
           />
         </div>
+
+        {!checkpoint.isEvaluated && (
+          <p className="text-sm text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
+            This question is for practice only and will not affect the final module score.
+          </p>
+        )}
       </CardContent>
-    </Card>
+    </Card >
   );
 }
 
@@ -707,6 +724,7 @@ function SortableStep({
           options: ["", "", "", ""],
           correctOptionIndex: 0,
           explanation: "",
+          isEvaluated: true,
         },
       ],
     });
@@ -950,6 +968,7 @@ export default function ModuleBuilder() {
               options: cp.options || ["", "", "", ""],
               correctOptionIndex: cp.correctOptionIndex,
               explanation: cp.explanation || "",
+              isEvaluated: cp.isEvaluated !== undefined ? cp.isEvaluated : true,
             }));
           } else if (s.checkpoint) {
             // Legacy single checkpoint
@@ -958,6 +977,7 @@ export default function ModuleBuilder() {
               options: s.checkpoint.options || ["", "", "", ""],
               correctOptionIndex: s.checkpoint.correctOptionIndex,
               explanation: s.checkpoint.explanation || "",
+              isEvaluated: s.checkpoint.isEvaluated !== undefined ? s.checkpoint.isEvaluated : true,
             }];
           }
 
@@ -1037,6 +1057,7 @@ export default function ModuleBuilder() {
                 options: cp.options || ["", "", "", ""],
                 correctOptionIndex: cp.correctOptionIndex,
                 explanation: cp.explanation || "",
+                isEvaluated: cp.isEvaluated !== undefined ? cp.isEvaluated : true,
               }));
             } else if (s.checkpoint) {
               checkpointsArray = [{
@@ -1044,6 +1065,7 @@ export default function ModuleBuilder() {
                 options: s.checkpoint.options || ["", "", "", ""],
                 correctOptionIndex: s.checkpoint.correctOptionIndex,
                 explanation: s.checkpoint.explanation || "",
+                isEvaluated: s.checkpoint.isEvaluated !== undefined ? s.checkpoint.isEvaluated : true,
               }];
             }
 

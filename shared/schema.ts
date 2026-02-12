@@ -231,6 +231,7 @@ export const stepCheckpoints = pgTable("step_checkpoints", {
   correctOptionIndex: integer("correct_option_index").notNull(),
   explanation: text("explanation"),
   order: integer("order").default(1).notNull(),
+  isEvaluated: boolean("is_evaluated").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
