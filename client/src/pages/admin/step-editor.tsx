@@ -20,39 +20,64 @@ import {
   Trash2,
   GripVertical,
   ArrowLeft,
+  ArrowUp,
+  ArrowDown,
+  Type,
+  Columns,
+  Image as ImageIcon,
+  Layout,
   HelpCircle,
   ChevronDown,
   ChevronUp
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Module, ModuleStep, StepContentBlock, StepCheckpoint } from "@shared/schema";
+import { RichTextEditor } from "@/components/rich-text-editor";
 
 interface StepWithDetails extends ModuleStep {
   contentBlocks: StepContentBlock[];
   checkpoint: StepCheckpoint | null;
+  checkpoints?: StepCheckpoint[]; // Support multiple from backend
 }
 
 interface StepFormData {
   id?: number;
   title: string;
-  contentBlocks: ContentBlockFormData[];
-  checkpoint: CheckpointFormData | null;
+  items: StepItemFormData[]; // Unified list
+  checkpointRequired: boolean;
+  order: number;
 }
 
-interface ContentBlockFormData {
+interface StepItemFormData {
   id?: number;
-  blockType: string;
-  content: string;
-  imageUrl: string;
+  // Discriminator
+  itemType: "content" | "checkpoint";
+
+  // Content block fields
+  blockType?: "text" | "image" | "video" | "split";
+  content?: string;
+  imageUrl?: string;
+  metadata?: {
+    splitRatio?: "30-70" | "50-50" | "70-30";
+    reverseLayout?: boolean;
+    columns?: 1 | 2 | 3;
+    fontSize?: "small" | "normal" | "large" | "xlarge";
+  };
+
+  // Checkpoint fields
+  question?: string;
+  options?: string[];
+  correctOptionIndex?: number;
+  explanation?: string;
+  isEvaluated?: boolean;
 }
 
-interface CheckpointFormData {
-  question: string;
-  options: string[];
-  correctOptionIndex: number;
-  explanation: string;
-  isEvaluated: boolean;
-}
+const initialStep: StepFormData = {
+  title: "",
+  order: 0,
+  checkpointRequired: true,
+  items: [],
+};
 
 function LoadingSkeleton() {
   return (
@@ -71,65 +96,48 @@ function LoadingSkeleton() {
   );
 }
 
-function CheckpointEditor({
-  checkpoint,
+function CheckpointItemEditor({
+  item,
   onChange,
-  onRemove,
 }: {
-  checkpoint: CheckpointFormData;
-  onChange: (data: CheckpointFormData) => void;
-  onRemove: () => void;
+  item: StepItemFormData;
+  onChange: (data: StepItemFormData) => void;
 }) {
+  const options = item.options || ["", "", "", ""];
+
   const handleOptionChange = (index: number, value: string) => {
-    const newOptions = [...checkpoint.options];
+    const newOptions = [...options];
     newOptions[index] = value;
-    onChange({ ...checkpoint, options: newOptions });
+    onChange({ ...item, options: newOptions });
   };
 
   return (
-    <Card className="border-2 border-primary/30 bg-primary/5" data-testid="checkpoint-editor">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <HelpCircle className="h-5 w-5 text-primary" />
-            <span className="text-sm font-medium">Checkpoint Question (Required)</span>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRemove}
-            data-testid="button-remove-checkpoint"
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="border border-indigo-100 rounded-md p-4 bg-indigo-50/30">
+      <div className="space-y-4">
         <div className="space-y-2">
           <Label>Question</Label>
           <Textarea
-            value={checkpoint.question}
-            onChange={(e) => onChange({ ...checkpoint, question: e.target.value })}
+            value={item.question || ""}
+            onChange={(e) => onChange({ ...item, question: e.target.value })}
             placeholder="Enter the checkpoint question"
             rows={2}
-            data-testid="input-checkpoint-question"
           />
         </div>
 
         <div className="space-y-2">
-          <Label>Answer Options (click to mark correct)</Label>
-          {checkpoint.options.map((option, idx) => (
+          <Label>Answer Options (Select the correct one)</Label>
+          {options.map((option, idx) => (
             <div key={idx} className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => onChange({ ...checkpoint, correctOptionIndex: idx })}
+                onClick={() => onChange({ ...item, correctOptionIndex: idx })}
                 className={cn(
                   "w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm font-medium shrink-0 transition-colors",
-                  checkpoint.correctOptionIndex === idx
+                  item.correctOptionIndex === idx
                     ? "border-emerald-500 bg-emerald-500 text-white"
                     : "border-muted-foreground/30 hover:border-primary"
                 )}
-                data-testid={`button-correct-option-${idx}`}
+                title="Mark as correct answer"
               >
                 {String.fromCharCode(65 + idx)}
               </button>
@@ -137,7 +145,7 @@ function CheckpointEditor({
                 value={option}
                 onChange={(e) => handleOptionChange(idx, e.target.value)}
                 placeholder={`Option ${String.fromCharCode(65 + idx)}`}
-                data-testid={`input-option-${idx}`}
+                className={item.correctOptionIndex === idx ? "border-emerald-500 ring-emerald-500/20" : ""}
               />
             </div>
           ))}
@@ -149,28 +157,126 @@ function CheckpointEditor({
           <div className="space-y-0.5">
             <Label className="text-base">Include in Final Evaluation</Label>
             <p className="text-sm text-muted-foreground">
-              If enabled, this question will count towards the module score. If disabled, it sends feedback but doesn't affect the grade.
+              If enabled, this question will count towards the module score.
             </p>
           </div>
           <Switch
-            checked={checkpoint.isEvaluated}
-            onCheckedChange={(checked) => onChange({ ...checkpoint, isEvaluated: checked })}
-            data-testid="switch-checkpoint-evaluation"
+            checked={item.isEvaluated !== false}
+            onCheckedChange={(checked) => onChange({ ...item, isEvaluated: checked })}
           />
         </div>
 
         <div className="space-y-2">
           <Label>Explanation (shown after answering)</Label>
           <Textarea
-            value={checkpoint.explanation}
-            onChange={(e) => onChange({ ...checkpoint, explanation: e.target.value })}
-            placeholder="Explain the correct answer"
+            value={item.explanation || ""}
+            onChange={(e) => onChange({ ...item, explanation: e.target.value })}
+            placeholder="Explain why the answer is correct"
             rows={2}
-            data-testid="input-checkpoint-explanation"
           />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
+  );
+}
+
+function ContentBlockItemEditor({
+  item,
+  onChange,
+}: {
+  item: StepItemFormData;
+  onChange: (data: StepItemFormData) => void;
+}) {
+  const metadata = item.metadata || {};
+
+  return (
+    <div className="space-y-4 p-4 border rounded-md bg-white">
+      <div className="flex items-center gap-2 mb-2">
+        {/* Block Type Selector could go here if we supported switching typs */}
+        <Badge variant="outline" className="uppercase text-xs font-bold text-muted-foreground">
+          {item.blockType || "Text"} Block
+        </Badge>
+      </div>
+
+      {item.blockType === "text" && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-4 border-b pb-2 mb-2">
+            <div className="flex items-center gap-2">
+              <Type className="h-4 w-4 text-muted-foreground" />
+              <select
+                className="text-sm border rounded px-2 py-1 bg-background"
+                value={metadata.fontSize || "normal"}
+                onChange={(e) => onChange({ ...item, metadata: { ...metadata, fontSize: e.target.value as any } })}
+              >
+                <option value="small">Small Text</option>
+                <option value="normal">Normal Text</option>
+                <option value="large">Large Text</option>
+                <option value="xlarge">Extra Large</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Columns className="h-4 w-4 text-muted-foreground" />
+              <select
+                className="text-sm border rounded px-2 py-1 bg-background"
+                value={metadata.columns || 1}
+                onChange={(e) => onChange({ ...item, metadata: { ...metadata, columns: parseInt(e.target.value) as any } })}
+              >
+                <option value={1}>1 Column</option>
+                <option value={2}>2 Columns</option>
+                <option value={3}>3 Columns</option>
+              </select>
+            </div>
+          </div>
+
+          <RichTextEditor
+            content={item.content || ""}
+            onChange={(content) => onChange({ ...item, content })}
+            className="min-h-[200px]"
+          />
+        </div>
+      )}
+
+      {item.blockType === "image" && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Image URL</Label>
+            <div className="flex gap-2">
+              <Input
+                value={item.imageUrl || ""}
+                onChange={(e) => onChange({ ...item, imageUrl: e.target.value })}
+                placeholder="https://example.com/image.jpg"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Provide a direct URL to an image.
+            </p>
+          </div>
+          {item.imageUrl && (
+            <div className="relative aspect-video rounded-md overflow-hidden border bg-muted">
+              <img
+                src={item.imageUrl}
+                alt="Preview"
+                className="object-cover w-full h-full"
+                onError={(e) => (e.currentTarget.style.display = "none")}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {item.blockType === "video" && (
+        <div className="space-y-2">
+          <Label>Video Embed</Label>
+          <Textarea
+            value={item.content || ""}
+            onChange={(e) => onChange({ ...item, content: e.target.value })}
+            placeholder="Paste YouTube embed code or checking URL..."
+            rows={3}
+            className="font-mono text-sm"
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -189,184 +295,173 @@ function StepEditor({
   onChange: (data: StepFormData) => void;
   onRemove: () => void;
 }) {
-  const handleContentBlockChange = (blockIndex: number, data: Partial<ContentBlockFormData>) => {
-    const newBlocks = [...step.contentBlocks];
-    newBlocks[blockIndex] = { ...newBlocks[blockIndex], ...data };
-    onChange({ ...step, contentBlocks: newBlocks });
-  };
+  const items = step.items || [];
 
-  const handleAddContentBlock = () => {
-    onChange({
-      ...step,
-      contentBlocks: [
-        ...step.contentBlocks,
-        { blockType: "text", content: "", imageUrl: "" },
-      ],
-    });
-  };
-
-  const handleRemoveContentBlock = (blockIndex: number) => {
-    onChange({
-      ...step,
-      contentBlocks: step.contentBlocks.filter((_, i) => i !== blockIndex),
-    });
-  };
-
-  const handleAddCheckpoint = () => {
-    onChange({
-      ...step,
-      checkpoint: {
+  const handleAddItem = (type: "content" | "checkpoint", blockType: "text" | "image" | "video" | "split" = "text") => {
+    const newItem: StepItemFormData = type === "content"
+      ? {
+        itemType: "content",
+        blockType,
+        content: "",
+        imageUrl: "",
+        metadata: { fontSize: "normal", columns: 1 }
+      }
+      : {
+        itemType: "checkpoint",
         question: "",
         options: ["", "", "", ""],
         correctOptionIndex: 0,
         explanation: "",
         isEvaluated: true,
-      },
+      };
+
+    onChange({
+      ...step,
+      items: [...items, newItem]
     });
   };
 
-  const handleRemoveCheckpoint = () => {
-    onChange({ ...step, checkpoint: null });
+  const handleUpdateItem = (itemIndex: number, updates: Partial<StepItemFormData>) => {
+    const newItems = [...items];
+    // We update the item at itemIndex
+    newItems[itemIndex] = { ...newItems[itemIndex], ...updates };
+    onChange({ ...step, items: newItems });
+  };
+
+  const handleRemoveItem = (itemIndex: number) => {
+    const newItems = items.filter((_, i) => i !== itemIndex);
+    onChange({ ...step, items: newItems });
+  };
+
+  const handleMoveItem = (itemIndex: number, direction: "up" | "down") => {
+    if (
+      (direction === "up" && itemIndex === 0) ||
+      (direction === "down" && itemIndex === items.length - 1)
+    ) {
+      return;
+    }
+
+    const newItems = [...items];
+    const targetIndex = direction === "up" ? itemIndex - 1 : itemIndex + 1;
+    // Swap
+    [newItems[itemIndex], newItems[targetIndex]] = [newItems[targetIndex], newItems[itemIndex]];
+
+    onChange({ ...step, items: newItems });
   };
 
   return (
-    <Card className="border-2" data-testid={`step-editor-${index}`}>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-4">
-          <button
-            onClick={onToggle}
-            className="flex items-center gap-2 hover-elevate rounded p-1 -ml-1"
-            data-testid={`button-toggle-step-${index}`}
-          >
-            <GripVertical className="h-5 w-5 text-muted-foreground/50 cursor-grab" />
-            <Badge variant="outline">Step {index + 1}</Badge>
-            <span className="font-medium">{step.title || "Untitled Step"}</span>
-            {isExpanded ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            )}
-          </button>
-          <div className="flex items-center gap-2">
-            {step.checkpoint && (
-              <Badge variant="secondary" className="text-xs">Has Checkpoint</Badge>
-            )}
+    <Card className="border-l-4 border-l-primary/50 overflow-hidden">
+      <CardHeader className="bg-muted/10 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 flex-1">
             <Button
               variant="ghost"
-              size="icon"
-              onClick={onRemove}
-              data-testid={`button-remove-step-${index}`}
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={onToggle}
             >
-              <Trash2 className="h-4 w-4 text-destructive" />
+              {isExpanded ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
             </Button>
+            <div className="flex-1 max-w-md">
+              <Input
+                value={step.title}
+                onChange={(e) => onChange({ ...step, title: e.target.value })}
+                className="font-semibold h-8"
+                placeholder="Step Title"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+            <Badge variant="secondary">{items.length} items</Badge>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRemove}
+            className="text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         </div>
       </CardHeader>
 
       {isExpanded && (
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label>Step Title</Label>
-            <Input
-              value={step.title}
-              onChange={(e) => onChange({ ...step, title: e.target.value })}
-              placeholder="Enter step title"
-              data-testid={`input-step-title-${index}`}
-            />
-          </div>
-
-          <Separator />
-
+        <CardContent className="pt-6 space-y-6">
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label>Content Blocks</Label>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleAddContentBlock}
-                data-testid={`button-add-content-block-${index}`}
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Add Content
-              </Button>
-            </div>
-
-            {step.contentBlocks.map((block, blockIndex) => (
-              <Card key={blockIndex} className="border" data-testid={`content-block-${index}-${blockIndex}`}>
-                <CardContent className="pt-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Badge variant="outline" className="text-xs">
-                      Content Block {blockIndex + 1}
-                    </Badge>
+            {items.length === 0 ? (
+              <div className="text-center py-8 border-2 border-dashed rounded-lg bg-muted/20">
+                <p className="text-muted-foreground text-sm mb-4">No content yet. Add text, images, or checkpoints.</p>
+              </div>
+            ) : (
+              items.map((item, idx) => (
+                <div key={idx} className="group relative flex gap-2 items-start">
+                  <div className="flex flex-col gap-1 pt-4 opacity-50 group-hover:opacity-100 transition-opacity">
                     <Button
                       variant="ghost"
                       size="icon"
                       className="h-6 w-6"
-                      onClick={() => handleRemoveContentBlock(blockIndex)}
+                      disabled={idx === 0}
+                      onClick={() => handleMoveItem(idx, "up")}
                     >
-                      <Trash2 className="h-3 w-3 text-destructive" />
+                      <ArrowUp className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      disabled={idx === items.length - 1}
+                      onClick={() => handleMoveItem(idx, "down")}
+                    >
+                      <ArrowDown className="h-3 w-3" />
+                    </Button>
+                    <div className="flex-1" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-destructive"
+                      onClick={() => handleRemoveItem(idx)}
+                    >
+                      <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Content (HTML)</Label>
-                    <Textarea
-                      value={block.content}
-                      onChange={(e) => handleContentBlockChange(blockIndex, { content: e.target.value })}
-                      placeholder="Enter content (HTML supported)"
-                      rows={4}
-                      className="font-mono text-sm"
-                    />
+                  <div className="flex-1 min-w-0">
+                    {item.itemType === "content" ? (
+                      <ContentBlockItemEditor
+                        item={item}
+                        onChange={(updates) => handleUpdateItem(idx, updates)}
+                      />
+                    ) : (
+                      <CheckpointItemEditor
+                        item={item}
+                        onChange={(updates) => handleUpdateItem(idx, updates)}
+                      />
+                    )}
                   </div>
-
-                  <div className="space-y-2">
-                    <Label>Image URL (optional)</Label>
-                    <Input
-                      value={block.imageUrl}
-                      onChange={(e) => handleContentBlockChange(blockIndex, { imageUrl: e.target.value })}
-                      placeholder="https://example.com/image.jpg"
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-
-            {step.contentBlocks.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No content blocks yet. Add some content to this step.
-              </p>
+                </div>
+              ))
             )}
           </div>
 
           <Separator />
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label>Checkpoint Question</Label>
-              {!step.checkpoint && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAddCheckpoint}
-                  data-testid={`button-add-checkpoint-${index}`}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add Checkpoint
-                </Button>
-              )}
-            </div>
-
-            {step.checkpoint ? (
-              <CheckpointEditor
-                checkpoint={step.checkpoint}
-                onChange={(data) => onChange({ ...step, checkpoint: data })}
-                onRemove={handleRemoveCheckpoint}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No checkpoint question. Users need to answer a checkpoint to unlock the next step.
-              </p>
-            )}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => handleAddItem("content", "text")}>
+              <Type className="h-4 w-4 mr-2" /> Add Text
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => handleAddItem("content", "image")}>
+              <ImageIcon className="h-4 w-4 mr-2" /> Add Image
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => handleAddItem("content", "video")}>
+              <Layout className="h-4 w-4 mr-2" /> Add Video
+            </Button>
+            <div className="w-px bg-border h-8 mx-2" />
+            <Button variant="secondary" size="sm" onClick={() => handleAddItem("checkpoint")}>
+              <HelpCircle className="h-4 w-4 mr-2" /> Add Checkpoint Question
+            </Button>
           </div>
         </CardContent>
       )}
@@ -384,6 +479,7 @@ export default function AdminStepEditor() {
 
   const { data: module } = useQuery<Module>({
     queryKey: ["/api/admin/modules", id],
+    enabled: !!id,
   });
 
   const { data: stepsData, isLoading } = useQuery<StepWithDetails[]>({
@@ -393,55 +489,137 @@ export default function AdminStepEditor() {
 
   useEffect(() => {
     if (stepsData) {
-      setSteps(stepsData.map(s => ({
-        id: s.id,
-        title: s.title,
-        contentBlocks: (s.contentBlocks || []).map(b => ({
-          id: b.id,
-          blockType: b.blockType,
-          content: b.content || "",
-          imageUrl: b.imageUrl || "",
-        })),
-        checkpoint: s.checkpoint ? {
-          question: s.checkpoint.question,
-          options: s.checkpoint.options || ["", "", "", ""],
-          correctOptionIndex: s.checkpoint.correctOptionIndex,
-          explanation: s.checkpoint.explanation || "",
-          isEvaluated: s.checkpoint.isEvaluated !== undefined ? s.checkpoint.isEvaluated : true,
-        } : null,
-      })));
+      setSteps(stepsData.map(s => {
+        // Map legacy fields to unified items if items not present
+        let items: StepItemFormData[] = [];
+
+        if (s.contentBlocks) {
+          items = s.contentBlocks.map(block => ({
+            id: block.id,
+            itemType: "content",
+            blockType: (block.blockType as any) || "text",
+            content: block.content || "",
+            imageUrl: block.imageUrl || "",
+            metadata: block.metadata as any,
+          }));
+        }
+
+        if (s.checkpoints && s.checkpoints.length > 0) {
+          // Multiple checkpoints
+          s.checkpoints.forEach(cp => {
+            items.push({
+              id: cp.id,
+              itemType: "checkpoint",
+              question: cp.question,
+              options: cp.options as string[],
+              correctOptionIndex: cp.correctOptionIndex,
+              explanation: cp.explanation || "",
+              isEvaluated: cp.isEvaluated ?? true,
+            });
+          });
+        } else if (s.checkpoint) {
+          // Single legacy checkpoint
+          items.push({
+            id: s.checkpoint.id,
+            itemType: "checkpoint",
+            question: s.checkpoint.question,
+            options: s.checkpoint.options as string[],
+            correctOptionIndex: s.checkpoint.correctOptionIndex,
+            explanation: s.checkpoint.explanation || "",
+            isEvaluated: s.checkpoint.isEvaluated ?? true,
+          });
+        }
+
+        // Items must be sorted? 
+        // NOTE: Server routes now support custom ordering. 
+        // We assume backend returns them in correct order if we processed them properly. 
+        // But here we constructed items from separate arrays.
+        // If contentBlocks had order, we should respect it.
+        // For now, we append checkpoints at the end for legacy data. 
+        // New data will have correct unified order if we store it.
+        // (Since we just enabled unified storage, old data will rely on this fallback).
+
+        return {
+          id: s.id,
+          title: s.title,
+          order: s.order,
+          checkpointRequired: s.checkpointRequired,
+          items,
+        };
+      }));
       setHasChanges(false);
     }
   }, [stepsData]);
 
   const saveSteps = useMutation({
     mutationFn: async (stepsToSave: StepFormData[]) => {
-      return await apiRequest<StepWithDetails[]>("PUT", `/api/admin/modules/${id}/steps`, { steps: stepsToSave });
+      // Clean up metadata before saving
+      const cleanedSteps = stepsToSave.map(step => ({
+        ...step,
+        items: step.items.map(item => ({
+          ...item,
+          // Ensure metadata is valid JSON object
+          metadata: item.metadata || {}
+        }))
+      }));
+
+      return await apiRequest<StepWithDetails[]>("PUT", `/api/admin/modules/${id}/steps`, { steps: cleanedSteps });
     },
     onSuccess: (data) => {
-      // Use the returned data to sync local state immediately
+      // Refresh local state from server response to get IDs of new items
       if (data && Array.isArray(data)) {
-        setSteps(data.map(s => ({
-          id: s.id,
-          title: s.title,
-          contentBlocks: (s.contentBlocks || []).map(b => ({
-            id: b.id,
-            blockType: b.blockType,
-            content: b.content || "",
-            imageUrl: b.imageUrl || "",
-          })),
-          checkpoint: s.checkpoint ? {
-            question: s.checkpoint.question,
-            options: s.checkpoint.options || ["", "", "", ""],
-            correctOptionIndex: s.checkpoint.correctOptionIndex,
-            explanation: s.checkpoint.explanation || "",
-            isEvaluated: s.checkpoint.isEvaluated !== undefined ? s.checkpoint.isEvaluated : true,
-          } : null,
-        })));
+        setSteps(data.map(s => {
+          let items: StepItemFormData[] = [];
+          if (s.contentBlocks) {
+            items = s.contentBlocks.map(block => ({
+              id: block.id,
+              itemType: "content",
+              blockType: (block.blockType as any) || "text",
+              content: block.content || "",
+              imageUrl: block.imageUrl || "",
+              metadata: block.metadata as any,
+              // Use order from block if needed, but array order in resultSteps should be correct
+            }));
+          }
+          // The resultSteps response from our new backend will have checkpoints sorted relative to blocks?
+          // Actually, our backend now returns { contentBlocks: [], checkpoints: [] }
+          // It does NOT return a unified "items" array.
+          // So we have to reconstruct "items" merging them.
+          // BUT, we lost the relative order between blocks and checkpoints in the response!
+          // We know the order *within* contentBlocks and *within* checkpoints.
+          // But since the backend splits them, the response lacks the "interleaved" info unless we add "order" field to both and sort.
+          // The backend does return "order" field for both!
+
+          let unifiedItems: any[] = [...items];
+
+          if (s.checkpoints) {
+            s.checkpoints.forEach(cp => {
+              unifiedItems.push({
+                id: cp.id,
+                itemType: "checkpoint",
+                question: cp.question,
+                options: cp.options,
+                correctOptionIndex: cp.correctOptionIndex,
+                explanation: cp.explanation,
+                order: cp.order // We added this to schema/response!
+              });
+            });
+          }
+
+          // Sort by order
+          unifiedItems.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+          return {
+            id: s.id,
+            title: s.title,
+            order: s.order,
+            checkpointRequired: s.checkpointRequired,
+            items: unifiedItems,
+          };
+        }));
       }
       setHasChanges(false);
       toast({ title: "Success", description: "Steps saved successfully" });
-      // Invalidate to ensure cache is fresh for other consumers
       queryClient.invalidateQueries({ queryKey: ["/api/admin/modules", id, "steps"] });
     },
     onError: (error) => {
@@ -464,8 +642,9 @@ export default function AdminStepEditor() {
   const handleAddStep = () => {
     const newStep: StepFormData = {
       title: `Step ${steps.length + 1}`,
-      contentBlocks: [],
-      checkpoint: null,
+      items: [],
+      order: steps.length + 1,
+      checkpointRequired: true
     };
     setSteps([...steps, newStep]);
     setExpandedSteps(new Set([...Array.from(expandedSteps), steps.length]));
@@ -514,7 +693,7 @@ export default function AdminStepEditor() {
                 Step Editor: {module?.title || "Loading..."}
               </h1>
               <p className="text-sm text-muted-foreground">
-                Create learning steps with checkpoint questions
+                Add content, videos, and checkpoints to this module.
               </p>
             </div>
           </div>
@@ -569,7 +748,7 @@ export default function AdminStepEditor() {
         )}
 
         {hasChanges && (
-          <div className="fixed bottom-4 right-4 bg-background border shadow-lg rounded-lg p-4 flex items-center gap-4">
+          <div className="fixed bottom-4 right-4 bg-background border shadow-lg rounded-lg p-4 flex items-center gap-4 z-50 animate-in fade-in slide-in-from-bottom-4">
             <span className="text-sm text-muted-foreground">You have unsaved changes</span>
             <Button
               onClick={handleSave}

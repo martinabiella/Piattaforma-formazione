@@ -29,12 +29,14 @@ interface RichTextEditorProps {
     content: string;
     onChange: (html: string) => void;
     placeholder?: string;
+    className?: string;
 }
 
 export function RichTextEditor({
     content,
     onChange,
     placeholder = "Start typing...",
+    className,
 }: RichTextEditorProps) {
     const [linkUrl, setLinkUrl] = useState("");
     const [isLinkPopoverOpen, setIsLinkPopoverOpen] = useState(false);
@@ -60,7 +62,7 @@ export function RichTextEditor({
         editorProps: {
             attributes: {
                 class:
-                    "prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[100px] px-3 py-2",
+                    cn("prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[100px] px-3 py-2", className),
             },
         },
         onUpdate: ({ editor }) => {
@@ -74,6 +76,19 @@ export function RichTextEditor({
             editor.commands.setContent(content);
         }
     }, [content, editor]);
+
+    // Sync className changes (e.g., when column count changes)
+    useEffect(() => {
+        if (editor) {
+            editor.setOptions({
+                editorProps: {
+                    attributes: {
+                        class: cn("prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[100px] px-3 py-2", className),
+                    },
+                },
+            });
+        }
+    }, [className, editor]);
 
     if (!editor) return null;
 
@@ -103,6 +118,40 @@ export function RichTextEditor({
                     title="Bullet List"
                 >
                     <List className="h-3.5 w-3.5" />
+                </Button>
+
+                <div className="h-4 w-px bg-border mx-1" />
+
+                {/* Headings */}
+                <Button
+                    type="button"
+                    variant={editor.isActive("heading", { level: 1 }) ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 w-7 p-0 font-bold"
+                    onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+                    title="Heading 1"
+                >
+                    H1
+                </Button>
+                <Button
+                    type="button"
+                    variant={editor.isActive("heading", { level: 2 }) ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 w-7 p-0 font-bold"
+                    onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+                    title="Heading 2"
+                >
+                    H2
+                </Button>
+                <Button
+                    type="button"
+                    variant={editor.isActive("heading", { level: 3 }) ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 w-7 p-0 font-bold"
+                    onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+                    title="Heading 3"
+                >
+                    H3
                 </Button>
 
                 {/* Link */}

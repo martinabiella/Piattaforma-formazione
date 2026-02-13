@@ -731,12 +731,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (!step) continue;
 
+        // Unified items handling: if "items" is present, split into blocks and checkpoints with correct order
+        // Otherwise use legacy fields
+        let contentBlocks: any[] = [];
+        let checkpoints: any[] = [];
+
+        if (stepData.items && Array.isArray(stepData.items)) {
+          // Unified mode
+          for (let j = 0; j < stepData.items.length; j++) {
+            const item = stepData.items[j];
+            const order = j + 1;
+            if (item.itemType === 'content') {
+              contentBlocks.push({ ...item, order });
+            } else if (item.itemType === 'checkpoint') {
+              checkpoints.push({ ...item, order });
+            }
+          }
+        } else {
+          // Legacy mode
+          contentBlocks = stepData.contentBlocks || [];
+          checkpoints = stepData.checkpoints || (stepData.checkpoint ? [stepData.checkpoint] : []);
+        }
+
         // Handle content blocks
         const existingBlocks = await storage.getStepContentBlocks(step.id);
         const existingBlockIds = new Set(existingBlocks.map(b => b.id));
-        const newBlockIds = new Set(
-          (stepData.contentBlocks || []).filter((b: any) => b.id).map((b: any) => b.id)
-        );
+        // Use the computed contentBlocks array to determine which IDs to keep
+        const newBlockIds = new Set(contentBlocks.filter((b: any) => b.id).map((b: any) => b.id));
 
         // Delete removed blocks
         for (const existingBlock of existingBlocks) {
@@ -747,16 +768,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Create or update content blocks
         const resultBlocks = [];
-        const contentBlocks = stepData.contentBlocks || [];
+        // finalContentBlocks is prepared above
         for (let j = 0; j < contentBlocks.length; j++) {
           const blockData = contentBlocks[j];
+          // Use provided order from "items" mapping, or fallback to index based ordering
+          const order = blockData.order || (j + 1);
+
           const block = blockData.id && existingBlockIds.has(blockData.id)
             ? await storage.updateStepContentBlock(blockData.id, {
               blockType: blockData.blockType || 'text',
               content: blockData.content || null,
               imageUrl: blockData.imageUrl || null,
               metadata: blockData.metadata || null,
-              order: j + 1,
+              order: order,
             })
             : await storage.createStepContentBlock({
               stepId: step.id,
@@ -764,18 +788,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
               content: blockData.content || null,
               imageUrl: blockData.imageUrl || null,
               metadata: blockData.metadata || null,
-              order: j + 1,
+              order: order,
             });
           if (block) resultBlocks.push(block);
         }
 
         // Handle checkpoints (multiple per step)
-        let checkpoints: any[] = [];
-        if (stepData.checkpoints && Array.isArray(stepData.checkpoints) && stepData.checkpoints.length > 0) {
+        let resultCheckpoints: any[] = [];
+
+        if (checkpoints.length > 0) {
           // New: multiple checkpoints format - delete existing and recreate
           await storage.deleteStepCheckpointsByStepId(step.id);
-          for (let k = 0; k < stepData.checkpoints.length; k++) {
-            const cp = stepData.checkpoints[k];
+          for (let k = 0; k < checkpoints.length; k++) {
+            const cp = checkpoints[k];
             if (cp.question && Array.isArray(cp.options) && cp.options.length >= 2) {
               const checkpoint = await storage.createStepCheckpoint({
                 stepId: step.id,
@@ -784,31 +809,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 correctOptionIndex: cp.correctOptionIndex ?? 0,
                 explanation: cp.explanation || null,
                 isEvaluated: cp.isEvaluated !== undefined ? cp.isEvaluated : true,
-                order: k + 1,
+                order: cp.order || (k + 1),
               });
-              checkpoints.push(checkpoint);
+              resultCheckpoints.push(checkpoint);
             }
-          }
-        } else if (stepData.checkpoint) {
-          // Legacy: single checkpoint format - delete existing and recreate
-          await storage.deleteStepCheckpointsByStepId(step.id);
-          const cp = stepData.checkpoint;
-          if (cp.question && Array.isArray(cp.options) && cp.options.length >= 2) {
-            const checkpoint = await storage.createStepCheckpoint({
-              stepId: step.id,
-              question: cp.question,
-              options: cp.options,
-              correctOptionIndex: cp.correctOptionIndex ?? 0,
-              explanation: cp.explanation || null,
-              isEvaluated: cp.isEvaluated !== undefined ? cp.isEvaluated : true,
-              order: 1,
-            });
-            checkpoints.push(checkpoint);
           }
         }
         // If neither checkpoints nor checkpoint is provided with content, preserve existing checkpoints
 
-        resultSteps.push({ ...step, contentBlocks: resultBlocks, checkpoints });
+        resultSteps.push({ ...step, contentBlocks: resultBlocks, checkpoints: resultCheckpoints });
       }
 
       res.json(resultSteps);

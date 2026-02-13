@@ -210,6 +210,16 @@ export const stepContentBlocks = pgTable("step_content_blocks", {
   metadata: jsonb("metadata").$type<{
     splitRatio?: "30-70" | "50-50" | "70-30";
     reverseLayout?: boolean;
+    fontSize?: "small" | "normal" | "large" | "xlarge";
+    columns?: 1 | 2 | 3;
+    itemType?: "content" | "checkpoint";
+    checkpointData?: {
+      question: string;
+      options: string[];
+      correctOptionIndex: number;
+      explanation?: string;
+      isEvaluated: boolean;
+    };
   }>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

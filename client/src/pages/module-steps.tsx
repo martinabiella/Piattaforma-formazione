@@ -265,6 +265,17 @@ function StepBlockRenderer({ block }: { block: any }) { // Using any broadly for
   }
 
   // Default to text (or legacy blocks)
+  const columns = block.metadata?.columns || 1;
+  const fontSize = block.metadata?.fontSize || "normal";
+
+  const columnClass = columns === 3 ? "prose-columns-3" :
+    columns === 2 ? "prose-columns-2" : "";
+
+  const proseClass = fontSize === "small" ? "prose-sm" :
+    fontSize === "large" ? "prose-lg" :
+      fontSize === "xlarge" ? "prose-xl" :
+        "prose-lg"; // default size
+
   return (
     <div className="mb-8" data-testid={`content-block-${block.id}`}>
       {/* Legacy support: if it has image but no specific type, show it top like before */}
@@ -280,7 +291,11 @@ function StepBlockRenderer({ block }: { block: any }) { // Using any broadly for
 
       {block.content && (
         <div
-          className="prose prose-lg dark:prose-invert max-w-none"
+          className={cn(
+            "prose dark:prose-invert max-w-none",
+            proseClass,
+            columnClass
+          )}
           dangerouslySetInnerHTML={{ __html: block.content }}
         />
       )}
@@ -555,36 +570,57 @@ export default function ModuleSteps() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Content blocks */}
-                <div className="space-y-2">
-                  {currentStep?.contentBlocks.map((block) => (
-                    <StepBlockRenderer key={block.id} block={block} />
-                  ))}
-                </div>
+                {/* Unified Content & Checkpoints Rendering */}
+                {(() => {
+                  if (!currentStep) return null;
 
-                {/* Checkpoint questions */}
-                {currentStep?.checkpoints && currentStep.checkpoints.length > 0 && currentStep.isUnlocked && (
-                  <div className="mt-8 pt-6 border-t space-y-6">
-                    {currentStep.checkpoints.map((checkpoint, index) => (
-                      <Checkpoint
-                        key={checkpoint.id || index}
-                        step={{ ...currentStep, checkpoint }}
-                        onAnswer={(idx) => handleCheckpointAnswer(idx, checkpoint.id)}
-                        isPending={submitCheckpoint.isPending}
-                      />
-                    ))}
-                  </div>
-                )}
-                {/* Fallback for old checkpoint format */}
-                {(!currentStep?.checkpoints || currentStep.checkpoints.length === 0) && currentStep?.checkpoint && currentStep.isUnlocked && (
-                  <div className="mt-8 pt-6 border-t">
-                    <Checkpoint
-                      step={currentStep}
-                      onAnswer={(idx) => handleCheckpointAnswer(idx, currentStep.checkpoint!.id)}
-                      isPending={submitCheckpoint.isPending}
-                    />
-                  </div>
-                )}
+                  const contentItems = (currentStep.contentBlocks || []).map(b => ({ ...b, itemType: 'content' }));
+                  const checkpointItems = (currentStep.checkpoints && currentStep.checkpoints.length > 0)
+                    ? currentStep.checkpoints.map(c => ({ ...c, itemType: 'checkpoint' }))
+                    : (currentStep.checkpoint ? [{ ...currentStep.checkpoint, itemType: 'checkpoint' }] : []);
+
+                  let mixedItems = [...contentItems, ...checkpointItems];
+
+                  // Check for order collision (legacy data usually starts both sequences at 1)
+                  const orders = mixedItems.map(i => i.order || 0);
+                  const distinctOrders = new Set(orders);
+                  // If we have fewer unique order numbers than items, we have a collision -> fallback to separate sections
+                  const hasCollision = distinctOrders.size < mixedItems.length;
+
+                  if (hasCollision) {
+                    // Legacy behavior: Content first, then Checkpoints
+                    mixedItems = [
+                      ...contentItems.sort((a: any, b: any) => (a.order || 0) - (b.order || 0)),
+                      ...checkpointItems.sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+                    ];
+                  } else {
+                    // Unified behavior: Sort all by order
+                    mixedItems.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+                  }
+
+                  return (
+                    <div className="space-y-8">
+                      {mixedItems.map((item: any, idx) => {
+                        if (item.itemType === 'content') {
+                          return <StepBlockRenderer key={`block-${item.id}`} block={item} />;
+                        } else {
+                          // Determine if we need a visual separator for legacy look
+                          const isLegacySectionStart = hasCollision && item.itemType === 'checkpoint' && idx === contentItems.length;
+
+                          return (
+                            <div key={`cp-${item.id}`} className={isLegacySectionStart ? "pt-6 border-t" : ""}>
+                              <Checkpoint
+                                step={{ ...currentStep, checkpoint: item }}
+                                onAnswer={(ansIdx) => handleCheckpointAnswer(ansIdx, item.id)}
+                                isPending={submitCheckpoint.isPending}
+                              />
+                            </div>
+                          );
+                        }
+                      })}
+                    </div>
+                  );
+                })()}
 
                 {/* Navigation buttons */}
                 <div className="flex items-center justify-between pt-6 border-t gap-4">

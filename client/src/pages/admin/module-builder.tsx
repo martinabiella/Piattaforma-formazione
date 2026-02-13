@@ -52,6 +52,7 @@ import {
   Columns,
   ArrowRightLeft,
   LayoutTemplate,
+  Type,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -81,6 +82,8 @@ interface ContentBlockFormData {
   metadata?: {
     splitRatio?: "30-70" | "50-50" | "70-30";
     reverseLayout?: boolean;
+    fontSize?: "small" | "normal" | "large" | "xlarge";
+    columns?: 1 | 2 | 3;
   };
 }
 
@@ -101,6 +104,7 @@ interface CheckpointEditorProps {
   onRequiredChange: (required: boolean) => void;
   onRemove: () => void;
 }
+
 function CheckpointEditor({
   checkpoint,
   stepIndex,
@@ -430,11 +434,47 @@ function SortableContentBlock({
             {/* Text Input */}
             {(block.blockType === "text" || block.blockType === "split") && (
               <div className={cn("space-y-2", block.blockType === "split" && block.metadata?.reverseLayout && "order-2")}>
-                <Label>Content</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Content</Label>
+                  {block.blockType === "text" && (
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <Type className="h-3 w-3 text-muted-foreground" />
+                        <select
+                          className="text-xs border rounded px-1 py-0.5 bg-background h-6"
+                          value={block.metadata?.fontSize || "normal"}
+                          onChange={(e) => updateMetadata({ fontSize: e.target.value as any })}
+                        >
+                          <option value="small">Small</option>
+                          <option value="normal">Normal</option>
+                          <option value="large">Large</option>
+                          <option value="xlarge">Extra Large</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Columns className="h-3 w-3 text-muted-foreground" />
+                        <select
+                          className="text-xs border rounded px-1 py-0.5 bg-background h-6"
+                          value={block.metadata?.columns || 1}
+                          onChange={(e) => updateMetadata({ columns: parseInt(e.target.value) as any })}
+                        >
+                          <option value={1}>1 Col</option>
+                          <option value={2}>2 Cols</option>
+                          <option value={3}>3 Cols</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <RichTextEditor
                   content={block.content}
                   onChange={(html) => onChange({ content: html })}
                   placeholder="Start typing your content..."
+                  className={cn(
+                    "min-h-[150px]",
+                    block.metadata?.columns === 2 && "prose-columns-2",
+                    block.metadata?.columns === 3 && "prose-columns-3"
+                  )}
                 />
               </div>
             )}
