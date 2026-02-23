@@ -236,7 +236,8 @@ function StepBlockRenderer({ block }: { block: any }) { // Using any broadly for
             <img
               src={block.imageUrl}
               alt="Step content"
-              className="w-full h-auto object-cover"
+              style={{ width: block.metadata?.imageWidth || "100%" }}
+              className="h-auto object-cover"
             />
           ) : (
             <div className="flex items-center justify-center p-12 text-muted-foreground bg-muted/50">
@@ -256,7 +257,8 @@ function StepBlockRenderer({ block }: { block: any }) { // Using any broadly for
             <img
               src={block.imageUrl}
               alt="Step content"
-              className="w-full h-auto max-h-[600px] object-contain mx-auto"
+              style={{ width: block.metadata?.imageWidth || "100%" }}
+              className="h-auto max-h-[600px] object-contain mx-auto"
             />
           </div>
         )}

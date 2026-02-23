@@ -68,14 +68,15 @@ interface StepFormData {
   id?: number;
   tempId: string;
   title: string;
-  contentBlocks: ContentBlockFormData[];
-  checkpoints: CheckpointFormData[];
+  items: (ContentBlockFormData | CheckpointFormData)[];
   checkpointRequired: boolean;
 }
 
 interface ContentBlockFormData {
   id?: number;
   tempId: string;
+  itemType: "content";
+  order?: number;
   blockType: string;
   content: string;
   imageUrl: string;
@@ -84,10 +85,15 @@ interface ContentBlockFormData {
     reverseLayout?: boolean;
     fontSize?: "small" | "normal" | "large" | "xlarge";
     columns?: 1 | 2 | 3;
+    imageWidth?: "25%" | "50%" | "75%" | "100%";
   };
 }
 
 interface CheckpointFormData {
+  id?: number;
+  tempId: string;
+  itemType: "checkpoint";
+  order?: number;
   question: string;
   options: string[];
   correctOptionIndex: number;
@@ -103,6 +109,49 @@ interface CheckpointEditorProps {
   onChange: (data: CheckpointFormData) => void;
   onRequiredChange: (required: boolean) => void;
   onRemove: () => void;
+}
+
+
+function SortableCheckpoint({
+  checkpoint,
+  stepIndex,
+  itemIndex,
+  checkpointRequired,
+  onChange,
+  onRequiredChange,
+  onRemove,
+}: {
+  checkpoint: CheckpointFormData;
+  stepIndex: number;
+  itemIndex: number;
+  checkpointRequired: boolean;
+  onChange: (data: Partial<CheckpointFormData>) => void;
+  onRequiredChange: (required: boolean) => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: checkpoint.tempId });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+
+  return (
+    <div ref={setNodeRef} style={style} className={cn("group relative", isDragging && "z-50")}>
+      <div className="absolute left-2 top-4 z-10">
+        <button {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded">
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </button>
+      </div>
+      <div className="pl-8">
+        <CheckpointEditor
+          checkpoint={checkpoint}
+          stepIndex={stepIndex}
+          checkpointIndex={itemIndex}
+          checkpointRequired={checkpointRequired}
+          onChange={(data) => onChange(data)}
+          onRequiredChange={onRequiredChange}
+          onRemove={onRemove}
+        />
+      </div>
+    </div>
+  );
 }
 
 function CheckpointEditor({
@@ -518,14 +567,36 @@ function SortableContentBlock({
                   </div>
 
                   {block.imageUrl && (
-                    <div className="relative aspect-video w-full overflow-hidden rounded-md border bg-muted">
+                    <div className="relative w-full rounded-md border bg-muted flex justify-center p-2">
                       <img
                         src={block.imageUrl}
                         alt="Preview"
-                        className="h-full w-full object-cover"
+                        style={{ width: block.metadata?.imageWidth || "100%" }}
+                        className="h-auto object-cover"
                       />
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* Image Width Control */}
+            {(block.blockType === "image" || block.blockType === "split") && (
+              <div className="flex items-center gap-2 mt-2">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">Image Width:</Label>
+                <div className="flex gap-1">
+                  {(["25%", "50%", "75%", "100%"] as const).map((width) => (
+                    <Button
+                      key={width}
+                      type="button"
+                      variant={block.metadata?.imageWidth === width ? "secondary" : "outline"}
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => updateMetadata({ imageWidth: width })}
+                    >
+                      {width}
+                    </Button>
+                  ))}
                 </div>
               </div>
             )}
@@ -560,7 +631,8 @@ function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
             <img
               src={block.imageUrl}
               alt="Step content"
-              className="w-full h-auto object-cover"
+              style={{ width: block.metadata?.imageWidth || "100%" }}
+              className="h-auto object-cover"
             />
           ) : (
             <div className="flex items-center justify-center p-12 text-muted-foreground bg-muted/50">
@@ -580,7 +652,8 @@ function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
             <img
               src={block.imageUrl}
               alt="Step content"
-              className="w-full h-auto max-h-[600px] object-contain mx-auto"
+              style={{ width: block.metadata?.imageWidth || "100%" }}
+              className="h-auto max-h-[600px] object-contain mx-auto"
             />
           </div>
         ) : (
@@ -676,19 +749,21 @@ function StepPreview({ step, index }: { step: StepFormData; index: number }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {step.contentBlocks.length === 0 && step.checkpoints.length === 0 && (
+        {step.items.length === 0 && (
           <p className="text-muted-foreground italic">No content added to this step yet.</p>
         )}
 
-        {step.contentBlocks.map((block, blockIndex) => (
-          <ContentBlockPreview key={block.tempId || blockIndex} block={block} />
-        ))}
-
-        {step.checkpoints.map((checkpoint, cpIndex) => (
-          <div key={cpIndex} className="mt-8 pt-6 border-t">
-            <CheckpointPreview checkpoint={checkpoint} stepIndex={index} />
-          </div>
-        ))}
+        {step.items.map((item, itemIndex) => {
+          if (item.itemType === 'content') {
+            return <ContentBlockPreview key={item.tempId || itemIndex} block={item as ContentBlockFormData} />;
+          } else {
+            return (
+              <div key={item.tempId || itemIndex} className="mt-8 pt-6 border-t">
+                <CheckpointPreview checkpoint={item as CheckpointFormData} stepIndex={index} />
+              </div>
+            );
+          }
+        })}
       </CardContent>
     </Card>
   );
@@ -731,35 +806,37 @@ function SortableStep({
     })
   );
 
-  const handleContentBlockChange = (blockIndex: number, data: Partial<ContentBlockFormData>) => {
-    const newBlocks = [...step.contentBlocks];
-    newBlocks[blockIndex] = { ...newBlocks[blockIndex], ...data };
-    onChange({ ...step, contentBlocks: newBlocks });
+  const handleItemChange = (itemIndex: number, data: Partial<ContentBlockFormData | CheckpointFormData>) => {
+    const newItems = [...step.items];
+    newItems[itemIndex] = { ...newItems[itemIndex], ...data } as any;
+    onChange({ ...step, items: newItems });
   };
 
   const handleAddContentBlock = () => {
     onChange({
       ...step,
-      contentBlocks: [
-        ...step.contentBlocks,
-        { tempId: generateTempId(), blockType: "text", content: "", imageUrl: "" },
+      items: [
+        ...step.items,
+        { tempId: generateTempId(), itemType: "content", blockType: "text", content: "", imageUrl: "" },
       ],
     });
   };
 
-  const handleRemoveContentBlock = (blockIndex: number) => {
+  const handleRemoveItem = (itemIndex: number) => {
     onChange({
       ...step,
-      contentBlocks: step.contentBlocks.filter((_, i) => i !== blockIndex),
+      items: step.items.filter((_, i) => i !== itemIndex),
     });
   };
 
   const handleAddCheckpoint = () => {
     onChange({
       ...step,
-      checkpoints: [
-        ...step.checkpoints,
+      items: [
+        ...step.items,
         {
+          tempId: generateTempId(),
+          itemType: "checkpoint",
           question: "",
           options: ["", "", "", ""],
           correctOptionIndex: 0,
@@ -770,27 +847,14 @@ function SortableStep({
     });
   };
 
-  const handleRemoveCheckpoint = (checkpointIndex: number) => {
-    onChange({
-      ...step,
-      checkpoints: step.checkpoints.filter((_, i) => i !== checkpointIndex),
-    });
-  };
-
-  const handleCheckpointChange = (checkpointIndex: number, data: CheckpointFormData) => {
-    const newCheckpoints = [...step.checkpoints];
-    newCheckpoints[checkpointIndex] = data;
-    onChange({ ...step, checkpoints: newCheckpoints });
-  };
-
-  const handleContentBlockDragEnd = (event: DragEndEvent) => {
+  const handleItemDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
-      const oldIndex = step.contentBlocks.findIndex((b) => b.tempId === active.id);
-      const newIndex = step.contentBlocks.findIndex((b) => b.tempId === over.id);
+      const oldIndex = step.items.findIndex((b) => b.tempId === active.id);
+      const newIndex = step.items.findIndex((b) => b.tempId === over.id);
       onChange({
         ...step,
-        contentBlocks: arrayMove(step.contentBlocks, oldIndex, newIndex),
+        items: arrayMove(step.items, oldIndex, newIndex),
       });
     }
   };
@@ -826,14 +890,14 @@ function SortableStep({
                 </CollapsibleTrigger>
               </div>
               <div className="flex items-center gap-2">
-                {step.checkpoints.length > 0 && (
+                {step.items.filter(i => i.itemType === 'checkpoint').length > 0 && (
                   <Badge variant="secondary" className="text-xs">
                     <HelpCircle className="h-3 w-3 mr-1" />
-                    {step.checkpoints.length} Question{step.checkpoints.length > 1 ? 's' : ''}
+                    {step.items.filter(i => i.itemType === 'checkpoint').length} Question{step.items.filter(i => i.itemType === 'checkpoint').length > 1 ? 's' : ''}
                   </Badge>
                 )}
                 <Badge variant="outline" className="text-xs">
-                  {step.contentBlocks.length} block{step.contentBlocks.length !== 1 ? "s" : ""}
+                  {step.items.filter(i => i.itemType === 'content').length} block{step.items.filter(i => i.itemType === 'content').length !== 1 ? "s" : ""}
                 </Badge>
                 <Button
                   variant="ghost"
@@ -863,83 +927,73 @@ function SortableStep({
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label className="text-base font-medium">Content Blocks</Label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddContentBlock}
-                    data-testid={`button-add-content-${index}`}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Content
-                  </Button>
+                  <Label className="text-base font-medium">Step Content</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddContentBlock}
+                      data-testid={`button-add-content-${index}`}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Content
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddCheckpoint}
+                      data-testid={`button-add-checkpoint-${index}`}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Question
+                    </Button>
+                  </div>
                 </div>
 
-                {step.contentBlocks.length > 0 ? (
+                {step.items.length > 0 ? (
                   <DndContext
                     sensors={sensors}
                     collisionDetection={closestCenter}
-                    onDragEnd={handleContentBlockDragEnd}
+                    onDragEnd={handleItemDragEnd}
                   >
                     <SortableContext
-                      items={step.contentBlocks.map((b) => b.tempId)}
+                      items={step.items.map((i) => i.tempId)}
                       strategy={verticalListSortingStrategy}
                     >
                       <div className="space-y-3">
-                        {step.contentBlocks.map((block, blockIndex) => (
-                          <SortableContentBlock
-                            key={block.tempId}
-                            block={block}
-                            stepIndex={index}
-                            blockIndex={blockIndex}
-                            onChange={(data) => handleContentBlockChange(blockIndex, data)}
-                            onRemove={() => handleRemoveContentBlock(blockIndex)}
-                          />
-                        ))}
+                        {step.items.map((item, itemIndex) => {
+                          if (item.itemType === 'content') {
+                            return (
+                              <SortableContentBlock
+                                key={item.tempId}
+                                block={item as ContentBlockFormData}
+                                stepIndex={index}
+                                blockIndex={itemIndex}
+                                onChange={(data) => handleItemChange(itemIndex, data)}
+                                onRemove={() => handleRemoveItem(itemIndex)}
+                              />
+                            );
+                          } else {
+                            return (
+                              <SortableCheckpoint
+                                key={item.tempId}
+                                checkpoint={item as CheckpointFormData}
+                                stepIndex={index}
+                                itemIndex={itemIndex}
+                                checkpointRequired={step.checkpointRequired}
+                                onChange={(data) => handleItemChange(itemIndex, data)}
+                                onRequiredChange={(required) => onChange({ ...step, checkpointRequired: required })}
+                                onRemove={() => handleRemoveItem(itemIndex)}
+                              />
+                            );
+                          }
+                        })}
                       </div>
                     </SortableContext>
                   </DndContext>
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-4 border rounded-md border-dashed">
-                    No content blocks yet. Add text or images to this step.
-                  </p>
-                )}
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label className="text-base font-medium">Checkpoint Questions ({step.checkpoints.length})</Label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddCheckpoint}
-                    data-testid={`button-add-checkpoint-${index}`}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Add Question
-                  </Button>
-                </div>
-
-                {step.checkpoints.length > 0 ? (
-                  <div className="space-y-4">
-                    {step.checkpoints.map((checkpoint, cpIndex) => (
-                      <CheckpointEditor
-                        key={cpIndex}
-                        checkpoint={checkpoint}
-                        stepIndex={index}
-                        checkpointIndex={cpIndex}
-                        checkpointRequired={step.checkpointRequired}
-                        onChange={(data) => handleCheckpointChange(cpIndex, data)}
-                        onRequiredChange={(required) => onChange({ ...step, checkpointRequired: required })}
-                        onRemove={() => handleRemoveCheckpoint(cpIndex)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground text-center py-4 border rounded-md border-dashed">
-                    No questions. Add questions to gate access to the next step.
+                    No items yet. Add text, images, or checkpoint questions.
                   </p>
                 )}
               </div>
@@ -1001,39 +1055,56 @@ export default function ModuleBuilder() {
       setSteps(
         existingSteps.map((s) => {
           // Convert legacy checkpoint or new checkpoints array
-          let checkpointsArray: CheckpointFormData[] = [];
+          // Unify contentBlocks and checkpoints into items array
+          let items: (ContentBlockFormData | CheckpointFormData)[] = [];
+
+          if (s.contentBlocks) {
+            items.push(...s.contentBlocks.map((b) => ({
+              id: b.id,
+              tempId: `existing-block-${b.id}`,
+              itemType: "content" as const,
+              order: b.order,
+              blockType: b.blockType,
+              content: b.content || "",
+              imageUrl: b.imageUrl || "",
+              metadata: b.metadata || {},
+            })));
+          }
+
           if (s.checkpoints && Array.isArray(s.checkpoints)) {
-            checkpointsArray = s.checkpoints.map((cp) => ({
+            items.push(...s.checkpoints.map((cp) => ({
+              id: cp.id,
+              tempId: `existing-cp-${cp.id}`,
+              itemType: "checkpoint" as const,
+              order: cp.order,
               question: cp.question,
               options: cp.options || ["", "", "", ""],
               correctOptionIndex: cp.correctOptionIndex,
               explanation: cp.explanation || "",
               isEvaluated: cp.isEvaluated !== undefined ? cp.isEvaluated : true,
-            }));
+            })));
           } else if (s.checkpoint) {
-            // Legacy single checkpoint
-            checkpointsArray = [{
+            items.push({
+              id: s.checkpoint.id,
+              tempId: `existing-cp-${s.checkpoint.id}`,
+              itemType: "checkpoint" as const,
+              order: s.checkpoint.order,
               question: s.checkpoint.question,
               options: s.checkpoint.options || ["", "", "", ""],
               correctOptionIndex: s.checkpoint.correctOptionIndex,
               explanation: s.checkpoint.explanation || "",
               isEvaluated: s.checkpoint.isEvaluated !== undefined ? s.checkpoint.isEvaluated : true,
-            }];
+            });
           }
+
+          // Sort by order
+          items.sort((a, b) => (a.order || 0) - (b.order || 0));
 
           return {
             id: s.id,
             tempId: `existing-${s.id}`,
             title: s.title,
-            contentBlocks: (s.contentBlocks || []).map((b) => ({
-              id: b.id,
-              tempId: `existing-block-${b.id}`,
-              blockType: b.blockType,
-              content: b.content || "",
-              imageUrl: b.imageUrl || "",
-              metadata: b.metadata || {},
-            })),
-            checkpoints: checkpointsArray,
+            items,
             checkpointRequired: s.checkpointRequired !== undefined ? s.checkpointRequired : true,
           };
         })
@@ -1090,40 +1161,58 @@ export default function ModuleBuilder() {
         setSteps(
           data.map((s) => {
             // Convert legacy checkpoint or new checkpoints array
-            let checkpointsArray: CheckpointFormData[] = [];
-            if (s.checkpoints && Array.isArray(s.checkpoints)) {
-              checkpointsArray = s.checkpoints.map((cp: any) => ({
-                question: cp.question,
-                options: cp.options || ["", "", "", ""],
-                correctOptionIndex: cp.correctOptionIndex,
-                explanation: cp.explanation || "",
-                isEvaluated: cp.isEvaluated !== undefined ? cp.isEvaluated : true,
-              }));
-            } else if (s.checkpoint) {
-              checkpointsArray = [{
-                question: s.checkpoint.question,
-                options: s.checkpoint.options || ["", "", "", ""],
-                correctOptionIndex: s.checkpoint.correctOptionIndex,
-                explanation: s.checkpoint.explanation || "",
-                isEvaluated: s.checkpoint.isEvaluated !== undefined ? s.checkpoint.isEvaluated : true,
-              }];
-            }
+          // Unify contentBlocks and checkpoints into items array
+          let items: (ContentBlockFormData | CheckpointFormData)[] = [];
 
-            return {
-              id: s.id,
-              tempId: `existing-${s.id}`,
-              title: s.title,
-              contentBlocks: (s.contentBlocks || []).map((b: any) => ({
-                id: b.id,
-                tempId: `existing-block-${b.id}`,
-                blockType: b.blockType,
-                content: b.content || "",
-                imageUrl: b.imageUrl || "",
-                metadata: b.metadata || {},
-              })),
-              checkpoints: checkpointsArray,
-              checkpointRequired: s.checkpointRequired ?? true,
-            };
+          if (s.contentBlocks) {
+            items.push(...s.contentBlocks.map((b) => ({
+              id: b.id,
+              tempId: `existing-block-${b.id}`,
+              itemType: "content" as const,
+              order: b.order,
+              blockType: b.blockType,
+              content: b.content || "",
+              imageUrl: b.imageUrl || "",
+              metadata: b.metadata || {},
+            })));
+          }
+
+          if (s.checkpoints && Array.isArray(s.checkpoints)) {
+            items.push(...s.checkpoints.map((cp) => ({
+              id: cp.id,
+              tempId: `existing-cp-${cp.id}`,
+              itemType: "checkpoint" as const,
+              order: cp.order,
+              question: cp.question,
+              options: cp.options || ["", "", "", ""],
+              correctOptionIndex: cp.correctOptionIndex,
+              explanation: cp.explanation || "",
+              isEvaluated: cp.isEvaluated !== undefined ? cp.isEvaluated : true,
+            })));
+          } else if (s.checkpoint) {
+            items.push({
+              id: s.checkpoint.id,
+              tempId: `existing-cp-${s.checkpoint.id}`,
+              itemType: "checkpoint" as const,
+              order: s.checkpoint.order,
+              question: s.checkpoint.question,
+              options: s.checkpoint.options || ["", "", "", ""],
+              correctOptionIndex: s.checkpoint.correctOptionIndex,
+              explanation: s.checkpoint.explanation || "",
+              isEvaluated: s.checkpoint.isEvaluated !== undefined ? s.checkpoint.isEvaluated : true,
+            });
+          }
+
+          // Sort by order
+          items.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+          return {
+            id: s.id,
+            tempId: `existing-${s.id}`,
+            title: s.title,
+            items,
+            checkpointRequired: s.checkpointRequired !== undefined ? s.checkpointRequired : true,
+          };
           })
         );
       }
@@ -1152,8 +1241,7 @@ export default function ModuleBuilder() {
     const newStep: StepFormData = {
       tempId: generateTempId(),
       title: `Step ${steps.length + 1}`,
-      contentBlocks: [],
-      checkpoints: [],
+      items: [],
       checkpointRequired: true,
     };
     setSteps([...steps, newStep]);

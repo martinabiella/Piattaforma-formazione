@@ -220,6 +220,7 @@ export const stepContentBlocks = pgTable("step_content_blocks", {
       explanation?: string;
       isEvaluated: boolean;
     };
+    imageWidth?: "25%" | "50%" | "75%" | "100%";
   }>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
