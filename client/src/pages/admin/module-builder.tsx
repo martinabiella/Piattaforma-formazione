@@ -53,6 +53,8 @@ import {
   ArrowRightLeft,
   LayoutTemplate,
   Type,
+  Layers,
+  PanelLeftClose,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -77,17 +79,24 @@ interface ContentBlockFormData {
   tempId: string;
   itemType: "content";
   order?: number;
-  blockType: string;
+
+  // Content slots
   content: string;
   imageUrl: string;
-  metadata?: {
-    splitRatio?: "30-70" | "50-50" | "70-30";
-    reverseLayout?: boolean;
-    fontSize?: "small" | "normal" | "large" | "xlarge";
-    columns?: 1 | 2 | 3;
-    imageWidth?: "25%" | "50%" | "75%" | "100%";
-    width?: "1/3" | "1/2" | "full";
-  };
+
+  // Layout
+  arrangement: "stacked" | "side-by-side";
+  mediaWidth: "25%" | "33%" | "50%" | "75%" | "100%";
+  mediaPosition: "left" | "right";
+  blockWidth: "1/3" | "1/2" | "2/3" | "full";
+
+  // Text formatting
+  fontSize: "small" | "normal" | "large" | "xlarge";
+  columns: 1 | 2 | 3;
+
+  // Legacy compat — used for DB serialization
+  blockType?: string;
+  metadata?: Record<string, any>;
 }
 
 interface CheckpointFormData {
@@ -294,6 +303,92 @@ function generateTempId(): string {
   return `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+// Maps a DB content block (with blockType + metadata bag) to the new flat ContentBlockFormData
+function mapDbBlockToFormData(b: any, tempIdPrefix: string): ContentBlockFormData {
+  const meta = b.metadata || {};
+
+  // Determine arrangement from old blockType
+  let arrangement: ContentBlockFormData["arrangement"] = "stacked";
+  if (b.blockType === "split") {
+    arrangement = "side-by-side";
+  }
+
+  // Determine media position from old reverseLayout / splitRatio
+  let mediaPosition: ContentBlockFormData["mediaPosition"] = "left";
+  if (meta.reverseLayout === false || !meta.reverseLayout) {
+    // In old system, reverseLayout=false means "Text Left" (image right)
+    mediaPosition = "right";
+  }
+  if (meta.reverseLayout === true) {
+    mediaPosition = "left";
+  }
+
+  // Map old imageWidth to mediaWidth
+  let mediaWidth: ContentBlockFormData["mediaWidth"] = meta.imageWidth || "100%";
+  // Support old values that may not include 33%
+  if (!(["25%", "33%", "50%", "75%", "100%"] as string[]).includes(mediaWidth)) {
+    mediaWidth = "100%";
+  }
+
+  // Map old width to blockWidth, and add support for 2/3
+  let blockWidth: ContentBlockFormData["blockWidth"] = meta.width || "full";
+  if (!(["1/3", "1/2", "2/3", "full"] as string[]).includes(blockWidth)) {
+    blockWidth = "full";
+  }
+
+  return {
+    id: b.id,
+    tempId: `${tempIdPrefix}-${b.id}`,
+    itemType: "content",
+    order: b.order,
+    content: b.content || "",
+    imageUrl: b.imageUrl || "",
+    arrangement,
+    mediaWidth: mediaWidth as ContentBlockFormData["mediaWidth"],
+    mediaPosition,
+    blockWidth: blockWidth as ContentBlockFormData["blockWidth"],
+    fontSize: meta.fontSize || "normal",
+    columns: meta.columns || 1,
+    // Preserve for DB serialization
+    blockType: b.blockType,
+    metadata: meta,
+  };
+}
+
+// Converts form data back to the DB-compatible format for saving
+function formDataToDbBlock(block: ContentBlockFormData) {
+  // Determine blockType from content
+  let blockType = "text";
+  const hasImage = !!block.imageUrl;
+  const hasContent = !!block.content;
+  if (hasImage && hasContent && block.arrangement === "side-by-side") {
+    blockType = "split";
+  } else if (hasImage && !hasContent) {
+    blockType = "image";
+  }
+
+  return {
+    id: block.id,
+    itemType: block.itemType,
+    blockType,
+    content: block.content,
+    imageUrl: block.imageUrl,
+    metadata: {
+      // Layout
+      arrangement: block.arrangement,
+      mediaPosition: block.mediaPosition,
+      imageWidth: block.mediaWidth,
+      width: block.blockWidth,
+      // Text formatting  
+      fontSize: block.fontSize !== "normal" ? block.fontSize : undefined,
+      columns: block.columns !== 1 ? block.columns : undefined,
+      // Legacy compat for old split renderer
+      splitRatio: block.arrangement === "side-by-side" ? "50-50" : undefined,
+      reverseLayout: block.arrangement === "side-by-side" ? block.mediaPosition === "left" : undefined,
+    },
+  };
+}
+
 function LoadingSkeleton() {
   return (
     <div className="space-y-6">
@@ -375,16 +470,9 @@ function SortableContentBlock({
     }
   };
 
-  const updateMetadata = (updates: Partial<NonNullable<ContentBlockFormData['metadata']>>) => {
-    onChange({
-      metadata: {
-        splitRatio: "50-50",
-        reverseLayout: false,
-        ...block.metadata,
-        ...updates
-      }
-    });
-  };
+  const hasImage = !!block.imageUrl;
+  const hasContent = !!block.content;
+  const showArrangement = hasImage && hasContent;
 
   return (
     <div
@@ -394,7 +482,7 @@ function SortableContentBlock({
     >
       <Card className="border" data-testid={`content-block-${stepIndex}-${blockIndex}`}>
         <CardContent className="pt-4 space-y-3">
-          {/* Header with Drag Handle and Type Selector */}
+          {/* Header with Drag Handle and Delete */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <button
@@ -405,33 +493,10 @@ function SortableContentBlock({
               >
                 <GripVertical className="h-4 w-4 text-muted-foreground" />
               </button>
-
-              <div className="flex bg-muted rounded-md p-1 gap-1">
-                <Button
-                  variant={block.blockType === "text" ? "secondary" : "ghost"}
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => onChange({ blockType: "text" })}
-                >
-                  <FileText className="h-3 w-3 mr-1" /> Text
-                </Button>
-                <Button
-                  variant={block.blockType === "image" ? "secondary" : "ghost"}
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => onChange({ blockType: "image" })}
-                >
-                  <Image className="h-3 w-3 mr-1" /> Image
-                </Button>
-                <Button
-                  variant={block.blockType === "split" ? "secondary" : "ghost"}
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => onChange({ blockType: "split" })}
-                >
-                  <Columns className="h-3 w-3 mr-1" /> Split
-                </Button>
-              </div>
+              <Badge variant="outline" className="text-xs">
+                <Layers className="h-3 w-3 mr-1" />
+                Content Block
+              </Badge>
             </div>
             <Button
               variant="ghost"
@@ -444,182 +509,195 @@ function SortableContentBlock({
             </Button>
           </div>
 
-          {/* Split Layout Controls */}
-          {block.blockType === "split" && (
+          {/* Arrangement selector — only when both text + media are present */}
+          {showArrangement && (
             <div className="flex items-center gap-4 bg-muted/30 p-2 rounded-md">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-muted-foreground">Ratio:</span>
+                <span className="text-xs font-medium text-muted-foreground">Layout:</span>
                 <div className="flex gap-1">
-                  {(["30-70", "50-50", "70-30"] as const).map((ratio) => (
-                    <Button
-                      key={ratio}
-                      variant={block.metadata?.splitRatio === ratio ? "secondary" : "outline"}
-                      size="sm"
-                      className="h-6 px-2 text-xs"
-                      onClick={() => updateMetadata({ splitRatio: ratio })}
-                    >
-                      {ratio.replace("-", "/")}
-                    </Button>
-                  ))}
+                  <Button
+                    variant={block.arrangement === "stacked" ? "secondary" : "outline"}
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => onChange({ arrangement: "stacked" })}
+                  >
+                    <Layers className="h-3 w-3 mr-1" /> Stacked
+                  </Button>
+                  <Button
+                    variant={block.arrangement === "side-by-side" ? "secondary" : "outline"}
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => onChange({ arrangement: "side-by-side" })}
+                  >
+                    <PanelLeftClose className="h-3 w-3 mr-1" /> Side by Side
+                  </Button>
                 </div>
               </div>
-              <Separator orientation="vertical" className="h-4" />
-              <Button
-                variant={block.metadata?.reverseLayout ? "secondary" : "outline"}
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => updateMetadata({ reverseLayout: !block.metadata?.reverseLayout })}
-              >
-                <ArrowRightLeft className="h-3 w-3 mr-1" />
-                {block.metadata?.reverseLayout ? "Image Left" : "Text Left"}
-              </Button>
+              {block.arrangement === "side-by-side" && (
+                <>
+                  <Separator orientation="vertical" className="h-4" />
+                  <Button
+                    variant={block.mediaPosition === "left" ? "secondary" : "outline"}
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => onChange({ mediaPosition: block.mediaPosition === "left" ? "right" : "left" })}
+                  >
+                    <ArrowRightLeft className="h-3 w-3 mr-1" />
+                    {block.mediaPosition === "left" ? "Image Left" : "Image Right"}
+                  </Button>
+                </>
+              )}
             </div>
           )}
 
-          {/* Content Inputs */}
+          {/* Content Inputs — always show both sections */}
           <div className={cn(
             "grid gap-4",
-            block.blockType === "split" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"
+            showArrangement && block.arrangement === "side-by-side" ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1"
           )}>
-            {/* Text Input */}
-            {(block.blockType === "text" || block.blockType === "split") && (
-              <div className={cn("space-y-2", block.blockType === "split" && block.metadata?.reverseLayout && "order-2")}>
-                <div className="flex items-center justify-between">
-                  <Label>Content</Label>
-                  {block.blockType === "text" && (
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1">
-                        <Type className="h-3 w-3 text-muted-foreground" />
-                        <select
-                          className="text-xs border rounded px-1 py-0.5 bg-background h-6"
-                          value={block.metadata?.fontSize || "normal"}
-                          onChange={(e) => updateMetadata({ fontSize: e.target.value as any })}
-                        >
-                          <option value="small">Small</option>
-                          <option value="normal">Normal</option>
-                          <option value="large">Large</option>
-                          <option value="xlarge">Extra Large</option>
-                        </select>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Columns className="h-3 w-3 text-muted-foreground" />
-                        <select
-                          className="text-xs border rounded px-1 py-0.5 bg-background h-6"
-                          value={block.metadata?.columns || 1}
-                          onChange={(e) => updateMetadata({ columns: parseInt(e.target.value) as any })}
-                        >
-                          <option value={1}>1 Col</option>
-                          <option value={2}>2 Cols</option>
-                          <option value={3}>3 Cols</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
+            {/* Text Content */}
+            <div className={cn(
+              "space-y-2",
+              showArrangement && block.arrangement === "side-by-side" && block.mediaPosition === "left" && "order-2"
+            )}>
+              <div className="flex items-center justify-between">
+                <Label className="flex items-center gap-1">
+                  <FileText className="h-3 w-3" /> Content
+                </Label>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
+                    <Type className="h-3 w-3 text-muted-foreground" />
+                    <select
+                      className="text-xs border rounded px-1 py-0.5 bg-background h-6"
+                      value={block.fontSize}
+                      onChange={(e) => onChange({ fontSize: e.target.value as any })}
+                    >
+                      <option value="small">Small</option>
+                      <option value="normal">Normal</option>
+                      <option value="large">Large</option>
+                      <option value="xlarge">Extra Large</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Columns className="h-3 w-3 text-muted-foreground" />
+                    <select
+                      className="text-xs border rounded px-1 py-0.5 bg-background h-6"
+                      value={block.columns}
+                      onChange={(e) => onChange({ columns: parseInt(e.target.value) as any })}
+                    >
+                      <option value={1}>1 Col</option>
+                      <option value={2}>2 Cols</option>
+                      <option value={3}>3 Cols</option>
+                    </select>
+                  </div>
                 </div>
-                {block.blockType === "text" && (
-                  <div className="flex items-center gap-2 mt-2">
-                    <Label className="text-xs text-muted-foreground whitespace-nowrap">Block Width:</Label>
-                    <div className="flex gap-1">
-                      {(["full", "1/2", "1/3"] as const).map((w) => (
-                        <Button
-                          key={w}
-                          type="button"
-                          variant={block.metadata?.width === w || (!block.metadata?.width && w === "full") ? "secondary" : "outline"}
-                          size="sm"
-                          className="h-6 px-2 text-xs"
-                          onClick={() => updateMetadata({ width: w })}
-                        >
-                          {w === "full" ? "Full" : w === "1/2" ? "1/2" : "1/3"}
-                        </Button>
-                      ))}
-                    </div>
+              </div>
+              <RichTextEditor
+                content={block.content}
+                onChange={(html) => onChange({ content: html })}
+                placeholder="Start typing your content..."
+                className={cn(
+                  "min-h-[150px]",
+                  block.columns === 2 && "prose-columns-2",
+                  block.columns === 3 && "prose-columns-3"
+                )}
+              />
+            </div>
+
+            {/* Image / Media */}
+            <div className={cn(
+              "space-y-2",
+              showArrangement && block.arrangement === "side-by-side" && block.mediaPosition === "left" && "order-1"
+            )}>
+              <Label className="flex items-center gap-1">
+                <Image className="h-3 w-3" /> Image
+              </Label>
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <Input
+                    value={block.imageUrl || ""}
+                    onChange={(e) => onChange({ imageUrl: e.target.value })}
+                    placeholder="https://example.com/image.jpg"
+                    data-testid={`input-block-image-${stepIndex}-${blockIndex}`}
+                  />
+                  <div className="relative">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      disabled={isUploading}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      title="Upload image"
+                      disabled={isUploading}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {isUploading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {block.imageUrl && (
+                  <div className="relative w-full rounded-md border bg-muted flex justify-center p-2">
+                    <img
+                      src={block.imageUrl}
+                      alt="Preview"
+                      style={{ width: block.mediaWidth }}
+                      className="h-auto object-cover"
+                    />
                   </div>
                 )}
-                <RichTextEditor
-                  content={block.content}
-                  onChange={(html) => onChange({ content: html })}
-                  placeholder="Start typing your content..."
-                  className={cn(
-                    "min-h-[150px]",
-                    block.metadata?.columns === 2 && "prose-columns-2",
-                    block.metadata?.columns === 3 && "prose-columns-3"
-                  )}
-                />
               </div>
-            )}
 
-            {/* Image Input */}
-            {(block.blockType === "image" || block.blockType === "split") && (
-              <div className={cn("space-y-2", block.blockType === "split" && block.metadata?.reverseLayout && "order-1")}>
-                <Label>Image</Label>
-                <div className="flex flex-col gap-2">
-                  <div className="flex gap-2">
-                    <Input
-                      value={block.imageUrl || ""}
-                      onChange={(e) => onChange({ imageUrl: e.target.value })}
-                      placeholder="https://example.com/image.jpg"
-                      data-testid={`input-block-image-${stepIndex}-${blockIndex}`}
-                    />
-                    <div className="relative">
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        className="hidden"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        disabled={isUploading}
-                      />
+              {/* Image Width Control */}
+              {block.imageUrl && (
+                <div className="flex items-center gap-2 mt-2">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">Image Width:</Label>
+                  <div className="flex gap-1">
+                    {(["25%", "33%", "50%", "75%", "100%"] as const).map((width) => (
                       <Button
+                        key={width}
                         type="button"
-                        variant="outline"
-                        size="icon"
-                        title="Upload image"
-                        disabled={isUploading}
-                        onClick={() => fileInputRef.current?.click()}
+                        variant={block.mediaWidth === width ? "secondary" : "outline"}
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => onChange({ mediaWidth: width })}
                       >
-                        {isUploading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Upload className="h-4 w-4" />
-                        )}
+                        {width}
                       </Button>
-                    </div>
+                    ))}
                   </div>
-
-                  {block.imageUrl && (
-                    <div className="relative w-full rounded-md border bg-muted flex justify-center p-2">
-                      <img
-                        src={block.imageUrl}
-                        alt="Preview"
-                        style={{ width: block.metadata?.imageWidth || "100%" }}
-                        className="h-auto object-cover"
-                      />
-                    </div>
-                  )}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          </div>
 
-            {/* Image Width Control */}
-            {(block.blockType === "image" || block.blockType === "split") && (
-              <div className="flex items-center gap-2 mt-2">
-                <Label className="text-xs text-muted-foreground whitespace-nowrap">Image Width:</Label>
-                <div className="flex gap-1">
-                  {(["25%", "50%", "75%", "100%"] as const).map((width) => (
-                    <Button
-                      key={width}
-                      type="button"
-                      variant={block.metadata?.imageWidth === width ? "secondary" : "outline"}
-                      size="sm"
-                      className="h-6 px-2 text-xs"
-                      onClick={() => updateMetadata({ imageWidth: width })}
-                    >
-                      {width}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
+          {/* Block Width Control */}
+          <div className="flex items-center gap-2 pt-1 border-t">
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">Block Width:</Label>
+            <div className="flex gap-1">
+              {(["full", "2/3", "1/2", "1/3"] as const).map((w) => (
+                <Button
+                  key={w}
+                  type="button"
+                  variant={block.blockWidth === w ? "secondary" : "outline"}
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => onChange({ blockWidth: w })}
+                >
+                  {w === "full" ? "Full" : w}
+                </Button>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -630,80 +708,63 @@ function SortableContentBlock({
 // CheckpointEditor moved to top of file
 
 // Preview components that match user-facing styling
-// Preview components that match user-facing styling
 function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
-  const width = block.metadata?.width || "full";
-  const basisClass = width === "1/3" ? "md:basis-[calc(33.333%-1.5rem)]" :
-    width === "1/2" ? "md:basis-[calc(50%-1.5rem)]" : "basis-full";
+  const basisClass = block.blockWidth === "1/3" ? "md:basis-[calc(33.333%-1.5rem)]" :
+    block.blockWidth === "1/2" ? "md:basis-[calc(50%-1.5rem)]" :
+      block.blockWidth === "2/3" ? "md:basis-[calc(66.666%-1.5rem)]" : "basis-full";
 
-  if (block.blockType === "split") {
-    const ratio = block.metadata?.splitRatio || "50-50";
-    const reverse = block.metadata?.reverseLayout || false;
+  const hasImage = !!block.imageUrl;
+  const hasContent = !!block.content;
 
-    // Calculate grid columns based on ratio
-    let gridCols = "grid-cols-1 md:grid-cols-2"; // Default 50-50
-    if (ratio === "30-70") gridCols = "grid-cols-1 md:grid-cols-[3fr_7fr]";
-    if (ratio === "70-30") gridCols = "grid-cols-1 md:grid-cols-[7fr_3fr]";
+  const proseClass = block.fontSize === "small" ? "prose-sm" :
+    block.fontSize === "large" ? "prose-lg" :
+      block.fontSize === "xlarge" ? "prose-xl" : "prose-base";
 
+  // Side-by-side arrangement: text and image in columns
+  if (hasImage && hasContent && block.arrangement === "side-by-side") {
+    // Smart grid proportions based on mediaWidth
+    let gridCols = "grid-cols-1 md:grid-cols-2";
+    if (block.mediaWidth === "25%") gridCols = "grid-cols-1 md:grid-cols-[1fr_3fr]";
+    else if (block.mediaWidth === "33%") gridCols = "grid-cols-1 md:grid-cols-[1fr_2fr]";
+    else if (block.mediaWidth === "75%") gridCols = "grid-cols-1 md:grid-cols-[3fr_1fr]";
+
+    const imageOnLeft = block.mediaPosition === "left";
+
+    // In side-by-side, suppress multi-column text
     return (
       <div className={cn("grid gap-8 items-start mb-8", gridCols, basisClass)} data-testid="content-block-preview">
-        <div className={cn("prose prose-lg dark:prose-invert max-w-none", reverse && "md:order-2")}>
+        <div className={cn("prose dark:prose-invert max-w-none", proseClass, imageOnLeft && "md:order-2")}>
           <div dangerouslySetInnerHTML={{ __html: block.content }} />
         </div>
-        <div className={cn("rounded-lg overflow-hidden border bg-muted", reverse && "md:order-1")}>
-          {block.imageUrl ? (
-            <img
-              src={block.imageUrl}
-              alt="Step content"
-              style={{ width: block.metadata?.imageWidth || "100%" }}
-              className="h-auto object-cover"
-            />
-          ) : (
-            <div className="flex items-center justify-center p-12 text-muted-foreground bg-muted/50">
-              <Image className="h-12 w-12 opacity-20" />
-            </div>
-          )}
+        <div className={cn("rounded-lg overflow-hidden", imageOnLeft && "md:order-1")}>
+          <img
+            src={block.imageUrl}
+            alt="Step content"
+            className="w-full h-auto object-cover rounded-lg"
+          />
         </div>
       </div>
     );
   }
 
-  if (block.blockType === "image") {
-    return (
-      <div className={cn("mb-8", basisClass)} data-testid="content-block-preview">
-        {block.imageUrl ? (
-          <div className="rounded-lg overflow-hidden border bg-muted">
-            <img
-              src={block.imageUrl}
-              alt="Step content"
-              style={{ width: block.metadata?.imageWidth || "100%" }}
-              className="h-auto max-h-[600px] object-contain mx-auto"
-            />
-          </div>
-        ) : (
-          <div className="flex items-center justify-center p-12 text-muted-foreground border rounded-lg bg-muted/50">
-            <Image className="h-12 w-12 opacity-20" />
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Default to text
-  const columns = block.metadata?.columns || 1;
-  const fontSize = block.metadata?.fontSize || "normal";
-
-  const columnClass = columns === 3 ? "prose-columns-3" :
-    columns === 2 ? "prose-columns-2" : "";
-
-  const proseClass = fontSize === "small" ? "prose-sm" :
-    fontSize === "large" ? "prose-lg" :
-      fontSize === "xlarge" ? "prose-xl" :
-        "prose-lg"; // default size
+  // Stacked arrangement or single-content blocks
+  const columnClass = block.columns === 3 ? "prose-columns-3" :
+    block.columns === 2 ? "prose-columns-2" : "";
 
   return (
     <div className={cn("mb-8", basisClass)} data-testid="content-block-preview">
-      {block.content && (
+      {/* Image on top for stacked */}
+      {hasImage && (
+        <div className="rounded-lg overflow-hidden mb-4">
+          <img
+            src={block.imageUrl}
+            alt="Step content"
+            style={{ width: block.mediaWidth }}
+            className={cn("h-auto object-contain mx-auto rounded-lg", !hasContent && "max-h-[600px]")}
+          />
+        </div>
+      )}
+      {hasContent && (
         <div
           className={cn(
             "prose dark:prose-invert max-w-none",
@@ -844,7 +905,18 @@ function SortableStep({
       ...step,
       items: [
         ...step.items,
-        { tempId: generateTempId(), itemType: "content", blockType: "text", content: "", imageUrl: "" },
+        {
+          tempId: generateTempId(),
+          itemType: "content" as const,
+          content: "",
+          imageUrl: "",
+          arrangement: "stacked" as const,
+          mediaWidth: "100%" as const,
+          mediaPosition: "left" as const,
+          blockWidth: "full" as const,
+          fontSize: "normal" as const,
+          columns: 1 as const,
+        },
       ],
     });
   };
@@ -1087,16 +1159,7 @@ export default function ModuleBuilder() {
           let items: (ContentBlockFormData | CheckpointFormData)[] = [];
 
           if (s.contentBlocks) {
-            items.push(...s.contentBlocks.map((b) => ({
-              id: b.id,
-              tempId: `existing-block-${b.id}`,
-              itemType: "content" as const,
-              order: b.order,
-              blockType: b.blockType,
-              content: b.content || "",
-              imageUrl: b.imageUrl || "",
-              metadata: b.metadata || {},
-            })));
+            items.push(...s.contentBlocks.map((b: any) => mapDbBlockToFormData(b, "existing-block")));
           }
 
           if (s.checkpoints && Array.isArray(s.checkpoints)) {
@@ -1182,7 +1245,14 @@ export default function ModuleBuilder() {
 
   const saveSteps = useMutation({
     mutationFn: async (stepsToSave: StepFormData[]) => {
-      return await apiRequest<StepWithDetails[]>("PUT", `/api/admin/modules/${id}/steps`, { steps: stepsToSave });
+      // Serialize content blocks to DB format before sending
+      const serializedSteps = stepsToSave.map(step => ({
+        ...step,
+        items: step.items.map(item =>
+          item.itemType === "content" ? formDataToDbBlock(item as ContentBlockFormData) : item
+        ),
+      }));
+      return await apiRequest<StepWithDetails[]>("PUT", `/api/admin/modules/${id}/steps`, { steps: serializedSteps });
     },
     onSuccess: (data) => {
       if (data && Array.isArray(data)) {
@@ -1193,16 +1263,7 @@ export default function ModuleBuilder() {
             let items: (ContentBlockFormData | CheckpointFormData)[] = [];
 
             if (s.contentBlocks) {
-              items.push(...s.contentBlocks.map((b) => ({
-                id: b.id,
-                tempId: `existing-block-${b.id}`,
-                itemType: "content" as const,
-                order: b.order,
-                blockType: b.blockType,
-                content: b.content || "",
-                imageUrl: b.imageUrl || "",
-                metadata: b.metadata || {},
-              })));
+              items.push(...s.contentBlocks.map((b: any) => mapDbBlockToFormData(b, "existing-block")));
             }
 
             if (s.checkpoints && Array.isArray(s.checkpoints)) {

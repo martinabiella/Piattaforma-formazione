@@ -216,31 +216,75 @@ function StepNavItem({
   );
 }
 
-function StepBlockRenderer({ block }: { block: any }) { // Using any broadly for now to match strict schema types vs runtime metadata
-  if (block.blockType === "split") {
-    const ratio = block.metadata?.splitRatio || "50-50";
-    const reverse = block.metadata?.reverseLayout || false;
+function StepBlockRenderer({ block }: { block: any }) { // Using any for now — block comes from DB with mixed old/new metadata
+  const meta = block.metadata || {};
 
-    // Calculate grid columns based on ratio
-    let gridCols = "grid-cols-1 md:grid-cols-2"; // Default 50-50
-    if (ratio === "30-70") gridCols = "grid-cols-1 md:grid-cols-[3fr_7fr]";
-    if (ratio === "70-30") gridCols = "grid-cols-1 md:grid-cols-[7fr_3fr]";
+  // Determine arrangement: new system uses metadata.arrangement, old system uses blockType
+  const arrangement = meta.arrangement || (block.blockType === "split" ? "side-by-side" : "stacked");
+  const hasImage = !!block.imageUrl;
+  const hasContent = !!block.content;
 
+  // Determine media position (new system) or from old reverseLayout
+  const mediaPosition = meta.mediaPosition || (meta.reverseLayout ? "left" : "right");
+
+  // Image width: new system uses metadata.imageWidth, old system also used it
+  const imageWidth = meta.imageWidth || "100%";
+
+  // Block width
+  const blockWidth = meta.width || "full";
+  const basisClass = blockWidth === "1/3" ? "md:basis-[calc(33.333%-1.5rem)]" :
+    blockWidth === "1/2" ? "md:basis-[calc(50%-1.5rem)]" :
+      blockWidth === "2/3" ? "md:basis-[calc(66.666%-1.5rem)]" : "basis-full";
+
+  // Text formatting
+  const columns = meta.columns || 1;
+  const fontSize = meta.fontSize || "normal";
+
+  const proseClass = fontSize === "small" ? "prose-sm" :
+    fontSize === "large" ? "prose-lg" :
+      fontSize === "xlarge" ? "prose-xl" : "prose-base";
+
+  // Side-by-side arrangement
+  if (hasImage && hasContent && arrangement === "side-by-side") {
+    // Calculate smart grid proportions based on imageWidth
+    // Instead of fixed 50/50, give more space to text when image is small
+    let gridCols = "grid-cols-1 md:grid-cols-2";
+
+    // Support old splitRatio for backward compat
+    const ratio = meta.splitRatio;
+    if (ratio === "30-70") {
+      gridCols = "grid-cols-1 md:grid-cols-[3fr_7fr]";
+    } else if (ratio === "70-30") {
+      gridCols = "grid-cols-1 md:grid-cols-[7fr_3fr]";
+    } else {
+      // Smart proportions based on image width
+      if (imageWidth === "25%") gridCols = "grid-cols-1 md:grid-cols-[1fr_3fr]";
+      else if (imageWidth === "33%") gridCols = "grid-cols-1 md:grid-cols-[1fr_2fr]";
+      else if (imageWidth === "75%") gridCols = "grid-cols-1 md:grid-cols-[3fr_1fr]";
+      // 50% and 100% → default 50/50
+    }
+
+    const imageOnLeft = mediaPosition === "left";
+
+    // In side-by-side, NEVER apply multi-column text — it makes text unreadable
     return (
-      <div className={cn("grid gap-8 items-start mb-8", gridCols)} data-testid={`content-block-${block.id}`}>
-        <div className={cn("prose prose-lg dark:prose-invert max-w-none", reverse && "md:order-2")}>
+      <div className={cn("grid gap-8 items-start mb-8", gridCols, basisClass)} data-testid={`content-block-${block.id}`}>
+        <div className={cn(
+          "prose dark:prose-invert max-w-none",
+          proseClass,
+          imageOnLeft && "md:order-2"
+        )}>
           <div dangerouslySetInnerHTML={{ __html: block.content }} />
         </div>
-        <div className={cn("rounded-lg overflow-hidden border bg-muted", reverse && "md:order-1")}>
+        <div className={cn("rounded-lg overflow-hidden", imageOnLeft && "md:order-1")}>
           {block.imageUrl ? (
             <img
               src={block.imageUrl}
               alt="Step content"
-              style={{ width: block.metadata?.imageWidth || "100%" }}
-              className="h-auto object-cover"
+              className="w-full h-auto object-cover rounded-lg"
             />
           ) : (
-            <div className="flex items-center justify-center p-12 text-muted-foreground bg-muted/50">
+            <div className="flex items-center justify-center p-12 text-muted-foreground bg-muted/50 rounded-lg">
               <span className="text-sm">No image</span>
             </div>
           )}
@@ -249,49 +293,26 @@ function StepBlockRenderer({ block }: { block: any }) { // Using any broadly for
     );
   }
 
-  if (block.blockType === "image") {
-    return (
-      <div className="mb-8" data-testid={`content-block-${block.id}`}>
-        {block.imageUrl && (
-          <div className="rounded-lg overflow-hidden border bg-muted">
-            <img
-              src={block.imageUrl}
-              alt="Step content"
-              style={{ width: block.metadata?.imageWidth || "100%" }}
-              className="h-auto max-h-[600px] object-contain mx-auto"
-            />
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Default to text (or legacy blocks)
-  const columns = block.metadata?.columns || 1;
-  const fontSize = block.metadata?.fontSize || "normal";
-
+  // Stacked or single-content blocks (also handles old "image" and "text" blockTypes)
+  // In stacked mode, multi-column text is safe to apply
   const columnClass = columns === 3 ? "prose-columns-3" :
     columns === 2 ? "prose-columns-2" : "";
 
-  const proseClass = fontSize === "small" ? "prose-sm" :
-    fontSize === "large" ? "prose-lg" :
-      fontSize === "xlarge" ? "prose-xl" :
-        "prose-lg"; // default size
-
   return (
-    <div className="mb-8" data-testid={`content-block-${block.id}`}>
-      {/* Legacy support: if it has image but no specific type, show it top like before */}
-      {(!block.blockType || block.blockType === 'text') && block.imageUrl && (
+    <div className={cn("mb-8", basisClass)} data-testid={`content-block-${block.id}`}>
+      {/* Image on top for stacked / image-only / legacy text blocks with image */}
+      {hasImage && (
         <div className="mb-6 rounded-lg overflow-hidden">
           <img
             src={block.imageUrl}
             alt="Step content"
-            className="w-full h-auto max-h-96 object-cover"
+            style={{ width: imageWidth }}
+            className={cn("h-auto object-contain mx-auto rounded-lg", !hasContent && "max-h-[600px]")}
           />
         </div>
       )}
 
-      {block.content && (
+      {hasContent && (
         <div
           className={cn(
             "prose dark:prose-invert max-w-none",

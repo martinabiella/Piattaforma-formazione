@@ -208,10 +208,16 @@ export const stepContentBlocks = pgTable("step_content_blocks", {
   content: text("content"),
   imageUrl: varchar("image_url"),
   metadata: jsonb("metadata").$type<{
+    // New arrangement-based layout
+    arrangement?: "stacked" | "side-by-side";
+    mediaPosition?: "left" | "right";
+    // Legacy split layout (backward compat)
     splitRatio?: "30-70" | "50-50" | "70-30";
     reverseLayout?: boolean;
+    // Text formatting
     fontSize?: "small" | "normal" | "large" | "xlarge";
     columns?: 1 | 2 | 3;
+    // Checkpoint data (embedded)
     itemType?: "content" | "checkpoint";
     checkpointData?: {
       question: string;
@@ -220,8 +226,9 @@ export const stepContentBlocks = pgTable("step_content_blocks", {
       explanation?: string;
       isEvaluated: boolean;
     };
-    imageWidth?: "25%" | "50%" | "75%" | "100%";
-    width?: "1/3" | "1/2" | "full";
+    // Image/media sizing
+    imageWidth?: "25%" | "33%" | "50%" | "75%" | "100%";
+    width?: "1/3" | "1/2" | "2/3" | "full";
   }>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

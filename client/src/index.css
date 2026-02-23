@@ -317,4 +317,36 @@
       column-count: 1;
     }
   }
+
+  /* ─── Inline image alignment (rendered from TipTap HTML) ─── */
+  /* These rules interpret the data-alignment attribute on <img> tags
+     produced by the rich-text editor, so preview + student view match. */
+
+  .prose img[data-alignment] {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+  }
+
+  .prose img[data-alignment="center"] {
+    display: block;
+    margin: 0.75rem auto;
+  }
+
+  .prose img[data-alignment="left"] {
+    float: left;
+    margin: 0.25rem 1rem 0.5rem 0;
+  }
+
+  .prose img[data-alignment="right"] {
+    float: right;
+    margin: 0.25rem 0 0.5rem 1rem;
+  }
+
+  /* Clearfix for containers with floated images */
+  .prose::after {
+    content: '';
+    display: table;
+    clear: both;
+  }
 }
