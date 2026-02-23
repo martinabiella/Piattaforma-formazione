@@ -571,7 +571,7 @@ export default function ModuleSteps() {
                   {currentStep?.title}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="flex flex-wrap gap-x-6 gap-y-8">
                 {/* Unified Content & Checkpoints Rendering */}
                 {(() => {
                   if (!currentStep) return null;
@@ -601,7 +601,7 @@ export default function ModuleSteps() {
                   }
 
                   return (
-                    <div className="space-y-8">
+                    <div className="flex flex-wrap gap-x-6 gap-y-8 w-full">
                       {mixedItems.map((item: any, idx) => {
                         if (item.itemType === 'content') {
                           return <StepBlockRenderer key={`block-${item.id}`} block={item} />;
@@ -610,7 +610,7 @@ export default function ModuleSteps() {
                           const isLegacySectionStart = hasCollision && item.itemType === 'checkpoint' && idx === contentItems.length;
 
                           return (
-                            <div key={`cp-${item.id}`} className={isLegacySectionStart ? "pt-6 border-t" : ""}>
+                            <div key={`cp-${item.id}`} className={cn("basis-full", isLegacySectionStart ? "pt-6 border-t" : "")}>
                               <Checkpoint
                                 step={{ ...currentStep, checkpoint: item }}
                                 onAnswer={(ansIdx) => handleCheckpointAnswer(ansIdx, item.id)}

@@ -86,6 +86,7 @@ interface ContentBlockFormData {
     fontSize?: "small" | "normal" | "large" | "xlarge";
     columns?: 1 | 2 | 3;
     imageWidth?: "25%" | "50%" | "75%" | "100%";
+    width?: "1/3" | "1/2" | "full";
   };
 }
 
@@ -515,6 +516,25 @@ function SortableContentBlock({
                     </div>
                   )}
                 </div>
+                {block.blockType === "text" && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <Label className="text-xs text-muted-foreground whitespace-nowrap">Block Width:</Label>
+                    <div className="flex gap-1">
+                      {(["full", "1/2", "1/3"] as const).map((w) => (
+                        <Button
+                          key={w}
+                          type="button"
+                          variant={block.metadata?.width === w || (!block.metadata?.width && w === "full") ? "secondary" : "outline"}
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => updateMetadata({ width: w })}
+                        >
+                          {w === "full" ? "Full" : w === "1/2" ? "1/2" : "1/3"}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <RichTextEditor
                   content={block.content}
                   onChange={(html) => onChange({ content: html })}
@@ -612,6 +632,10 @@ function SortableContentBlock({
 // Preview components that match user-facing styling
 // Preview components that match user-facing styling
 function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
+  const width = block.metadata?.width || "full";
+  const basisClass = width === "1/3" ? "md:basis-[calc(33.333%-1.5rem)]" :
+    width === "1/2" ? "md:basis-[calc(50%-1.5rem)]" : "basis-full";
+
   if (block.blockType === "split") {
     const ratio = block.metadata?.splitRatio || "50-50";
     const reverse = block.metadata?.reverseLayout || false;
@@ -622,7 +646,7 @@ function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
     if (ratio === "70-30") gridCols = "grid-cols-1 md:grid-cols-[7fr_3fr]";
 
     return (
-      <div className={cn("grid gap-6 items-start", gridCols)} data-testid="content-block-preview">
+      <div className={cn("grid gap-8 items-start mb-8", gridCols, basisClass)} data-testid="content-block-preview">
         <div className={cn("prose prose-lg dark:prose-invert max-w-none", reverse && "md:order-2")}>
           <div dangerouslySetInnerHTML={{ __html: block.content }} />
         </div>
@@ -646,7 +670,7 @@ function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
 
   if (block.blockType === "image") {
     return (
-      <div data-testid="content-block-preview">
+      <div className={cn("mb-8", basisClass)} data-testid="content-block-preview">
         {block.imageUrl ? (
           <div className="rounded-lg overflow-hidden border bg-muted">
             <img
@@ -666,11 +690,26 @@ function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
   }
 
   // Default to text
+  const columns = block.metadata?.columns || 1;
+  const fontSize = block.metadata?.fontSize || "normal";
+
+  const columnClass = columns === 3 ? "prose-columns-3" :
+    columns === 2 ? "prose-columns-2" : "";
+
+  const proseClass = fontSize === "small" ? "prose-sm" :
+    fontSize === "large" ? "prose-lg" :
+      fontSize === "xlarge" ? "prose-xl" :
+        "prose-lg"; // default size
+
   return (
-    <div data-testid="content-block-preview">
+    <div className={cn("mb-8", basisClass)} data-testid="content-block-preview">
       {block.content && (
         <div
-          className="prose prose-lg dark:prose-invert max-w-none"
+          className={cn(
+            "prose dark:prose-invert max-w-none",
+            proseClass,
+            columnClass
+          )}
           dangerouslySetInnerHTML={{ __html: block.content }}
         />
       )}
@@ -678,58 +717,48 @@ function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
   );
 }
 
-function CheckpointPreview({ checkpoint, stepIndex }: { checkpoint: CheckpointFormData; stepIndex: number }) {
-  const options = checkpoint.options || [];
-
+function CheckpointPreview({ checkpoint }: { checkpoint: CheckpointFormData }) {
   return (
-    <Card className="border-2" data-testid={`checkpoint-preview-${stepIndex}`}>
-      <CardHeader className="pb-4">
-        <div className="flex items-center gap-2">
-          <HelpCircle className="h-5 w-5 text-primary" />
+    <Card className="border-primary/20 bg-primary/5 shadow-sm overflow-hidden mb-8">
+      <CardHeader className="pb-3 flex-row items-center gap-3 space-y-0">
+        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+          <HelpCircle className="h-5 w-5" />
+        </div>
+        <div>
           <CardTitle className="text-lg">Checkpoint Question</CardTitle>
-          <Badge variant="outline" className="ml-auto">Required to continue</Badge>
+          <p className="text-xs text-muted-foreground mt-0.5">Test your understanding to continue</p>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className="font-medium text-lg" data-testid={`text-checkpoint-question-preview-${stepIndex}`}>
-          {checkpoint.question || "No question set"}
-        </p>
-
-        <div className="space-y-2">
-          {options.map((option, index) => {
-            const isCorrect = index === checkpoint.correctOptionIndex;
-
-            return (
-              <button
-                key={index}
-                type="button"
-                disabled
-                className="w-full p-4 rounded-lg border text-left transition-all flex items-center gap-3 cursor-pointer hover-elevate"
-                data-testid={`option-preview-${stepIndex}-${index}`}
-              >
-                <span className="w-6 h-6 rounded-full border-2 flex items-center justify-center text-sm font-medium shrink-0">
-                  {String.fromCharCode(65 + index)}
-                </span>
-                <span className="flex-1">{option || `Option ${String.fromCharCode(65 + index)}`}</span>
-                {isCorrect && (
-                  <Badge variant="secondary" className="text-xs">
-                    <CheckCircle2 className="h-3 w-3 mr-1" />
-                    Correct
-                  </Badge>
-                )}
-              </button>
-            );
-          })}
+        <div className="text-lg font-medium leading-tight">
+          {checkpoint.question || "Untitled Question"}
         </div>
-
-        <Button disabled className="w-full" data-testid={`button-submit-preview-${stepIndex}`}>
-          Submit Answer
-        </Button>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {checkpoint.options.map((option, idx) => (
+            <div
+              key={idx}
+              className={cn(
+                "p-4 rounded-xl border-2 text-left transition-all flex items-center gap-3",
+                idx === checkpoint.correctOptionIndex
+                  ? "border-primary bg-primary/5 shadow-sm"
+                  : "border-muted bg-white/50"
+              )}
+            >
+              <div className={cn(
+                "h-6 w-6 rounded-full border-2 flex items-center justify-center text-xs font-bold",
+                idx === checkpoint.correctOptionIndex
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-muted-foreground/30"
+              )}>
+                {String.fromCharCode(65 + idx)}
+              </div>
+              <span className="flex-1 font-medium">{option || `Option ${idx + 1}`}</span>
+            </div>
+          ))}
+        </div>
         {checkpoint.explanation && (
-          <div className="mt-4 p-4 rounded-lg bg-muted/50 border">
-            <p className="text-sm font-medium text-muted-foreground mb-1">Explanation (shown after answering):</p>
-            <p className="text-sm" data-testid={`text-explanation-preview-${stepIndex}`}>{checkpoint.explanation}</p>
+          <div className="mt-4 p-4 rounded-lg bg-primary/5 border border-primary/10 text-sm italic">
+            <strong>Explanation:</strong> {checkpoint.explanation}
           </div>
         )}
       </CardContent>
@@ -739,35 +768,33 @@ function CheckpointPreview({ checkpoint, stepIndex }: { checkpoint: CheckpointFo
 
 function StepPreview({ step, index }: { step: StepFormData; index: number }) {
   return (
-    <Card data-testid={`step-preview-${index}`}>
-      <CardHeader>
-        <div className="flex items-center gap-3 flex-wrap">
-          <Badge variant="secondary">Step {index + 1}</Badge>
+    <Card className="border-0 shadow-none bg-transparent">
+      <CardHeader className="px-0">
+        <div className="flex items-center gap-2 mb-2">
+          <Badge variant="outline" className="text-primary border-primary/30 uppercase tracking-wider text-[10px] py-0 px-2">
+            Step {index + 1}
+          </Badge>
         </div>
-        <CardTitle className="text-2xl mt-2" data-testid={`text-step-title-preview-${index}`}>
-          {step.title}
+        <CardTitle className="text-4xl font-black tracking-tight mb-2">
+          {step.title || "Untitled Step"}
         </CardTitle>
+        <Separator className="h-1 bg-primary/10 w-24 rounded-full" />
       </CardHeader>
-      <CardContent className="space-y-6">
-        {step.items.length === 0 && (
-          <p className="text-muted-foreground italic">No content added to this step yet.</p>
-        )}
-
-        {step.items.map((item, itemIndex) => {
-          if (item.itemType === 'content') {
-            return <ContentBlockPreview key={item.tempId || itemIndex} block={item as ContentBlockFormData} />;
-          } else {
-            return (
-              <div key={item.tempId || itemIndex} className="mt-8 pt-6 border-t">
-                <CheckpointPreview checkpoint={item as CheckpointFormData} stepIndex={index} />
-              </div>
-            );
-          }
-        })}
+      <CardContent className="px-0 pt-6">
+        <div className="flex flex-wrap gap-x-6 gap-y-8">
+          {step.items.map((item) => (
+            item.itemType === "content" ? (
+              <ContentBlockPreview key={item.tempId} block={item as ContentBlockFormData} />
+            ) : (
+              <CheckpointPreview key={item.tempId} checkpoint={item as CheckpointFormData} />
+            )
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
 }
+
 
 function SortableStep({
   step,
@@ -858,6 +885,7 @@ function SortableStep({
       });
     }
   };
+
 
   return (
     <div ref={setNodeRef} style={style} className={cn(isDragging && "z-50")}>
@@ -1161,58 +1189,58 @@ export default function ModuleBuilder() {
         setSteps(
           data.map((s) => {
             // Convert legacy checkpoint or new checkpoints array
-          // Unify contentBlocks and checkpoints into items array
-          let items: (ContentBlockFormData | CheckpointFormData)[] = [];
+            // Unify contentBlocks and checkpoints into items array
+            let items: (ContentBlockFormData | CheckpointFormData)[] = [];
 
-          if (s.contentBlocks) {
-            items.push(...s.contentBlocks.map((b) => ({
-              id: b.id,
-              tempId: `existing-block-${b.id}`,
-              itemType: "content" as const,
-              order: b.order,
-              blockType: b.blockType,
-              content: b.content || "",
-              imageUrl: b.imageUrl || "",
-              metadata: b.metadata || {},
-            })));
-          }
+            if (s.contentBlocks) {
+              items.push(...s.contentBlocks.map((b) => ({
+                id: b.id,
+                tempId: `existing-block-${b.id}`,
+                itemType: "content" as const,
+                order: b.order,
+                blockType: b.blockType,
+                content: b.content || "",
+                imageUrl: b.imageUrl || "",
+                metadata: b.metadata || {},
+              })));
+            }
 
-          if (s.checkpoints && Array.isArray(s.checkpoints)) {
-            items.push(...s.checkpoints.map((cp) => ({
-              id: cp.id,
-              tempId: `existing-cp-${cp.id}`,
-              itemType: "checkpoint" as const,
-              order: cp.order,
-              question: cp.question,
-              options: cp.options || ["", "", "", ""],
-              correctOptionIndex: cp.correctOptionIndex,
-              explanation: cp.explanation || "",
-              isEvaluated: cp.isEvaluated !== undefined ? cp.isEvaluated : true,
-            })));
-          } else if (s.checkpoint) {
-            items.push({
-              id: s.checkpoint.id,
-              tempId: `existing-cp-${s.checkpoint.id}`,
-              itemType: "checkpoint" as const,
-              order: s.checkpoint.order,
-              question: s.checkpoint.question,
-              options: s.checkpoint.options || ["", "", "", ""],
-              correctOptionIndex: s.checkpoint.correctOptionIndex,
-              explanation: s.checkpoint.explanation || "",
-              isEvaluated: s.checkpoint.isEvaluated !== undefined ? s.checkpoint.isEvaluated : true,
-            });
-          }
+            if (s.checkpoints && Array.isArray(s.checkpoints)) {
+              items.push(...s.checkpoints.map((cp) => ({
+                id: cp.id,
+                tempId: `existing-cp-${cp.id}`,
+                itemType: "checkpoint" as const,
+                order: cp.order,
+                question: cp.question,
+                options: cp.options || ["", "", "", ""],
+                correctOptionIndex: cp.correctOptionIndex,
+                explanation: cp.explanation || "",
+                isEvaluated: cp.isEvaluated !== undefined ? cp.isEvaluated : true,
+              })));
+            } else if (s.checkpoint) {
+              items.push({
+                id: s.checkpoint.id,
+                tempId: `existing-cp-${s.checkpoint.id}`,
+                itemType: "checkpoint" as const,
+                order: s.checkpoint.order,
+                question: s.checkpoint.question,
+                options: s.checkpoint.options || ["", "", "", ""],
+                correctOptionIndex: s.checkpoint.correctOptionIndex,
+                explanation: s.checkpoint.explanation || "",
+                isEvaluated: s.checkpoint.isEvaluated !== undefined ? s.checkpoint.isEvaluated : true,
+              });
+            }
 
-          // Sort by order
-          items.sort((a, b) => (a.order || 0) - (b.order || 0));
+            // Sort by order
+            items.sort((a, b) => (a.order || 0) - (b.order || 0));
 
-          return {
-            id: s.id,
-            tempId: `existing-${s.id}`,
-            title: s.title,
-            items,
-            checkpointRequired: s.checkpointRequired !== undefined ? s.checkpointRequired : true,
-          };
+            return {
+              id: s.id,
+              tempId: `existing-${s.id}`,
+              title: s.title,
+              items,
+              checkpointRequired: s.checkpointRequired !== undefined ? s.checkpointRequired : true,
+            };
           })
         );
       }
