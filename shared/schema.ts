@@ -229,6 +229,24 @@ export const stepContentBlocks = pgTable("step_content_blocks", {
     // Image/media sizing
     imageWidth?: "25%" | "33%" | "50%" | "75%" | "100%";
     width?: "1/3" | "1/2" | "2/3" | "full";
+    // Table block data
+    tableData?: {
+      rows: number;
+      cols: number;
+      headerRow?: boolean;
+      cells: {
+        [key: string]: {
+          content?: string;
+          imageUrl?: string;
+          bgColor?: string;
+          textColor?: string;
+        };
+      };
+      colWidths?: string[];
+      rowHeights?: string[];
+      borderColor?: string;
+      rowBorderColors?: string[];
+    };
   }>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

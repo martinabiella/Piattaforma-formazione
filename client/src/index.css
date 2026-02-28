@@ -349,4 +349,39 @@
     display: table;
     clear: both;
   }
+
+  /* ─── Module table blocks ─── */
+  .module-table {
+    border-collapse: collapse;
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  .module-table td,
+  .module-table th {
+    padding: 0.75rem 1rem;
+    vertical-align: middle;
+    word-wrap: break-word;
+  }
+
+  .module-table img {
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+  }
+
+  .module-table tr {
+    border-bottom: 2px solid #e5e7eb;
+  }
+
+  .module-table tr:last-child {
+    border-bottom: none;
+  }
+
+  /* Responsive: stack columns on very small screens */
+  @media (max-width: 480px) {
+    .module-table {
+      table-layout: auto;
+    }
+  }
 }

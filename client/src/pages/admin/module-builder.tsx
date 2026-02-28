@@ -55,6 +55,7 @@ import {
   Type,
   Layers,
   PanelLeftClose,
+  Table2,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -70,7 +71,7 @@ interface StepFormData {
   id?: number;
   tempId: string;
   title: string;
-  items: (ContentBlockFormData | CheckpointFormData)[];
+  items: (ContentBlockFormData | CheckpointFormData | TableBlockFormData)[];
   checkpointRequired: boolean;
 }
 
@@ -97,6 +98,30 @@ interface ContentBlockFormData {
   // Legacy compat — used for DB serialization
   blockType?: string;
   metadata?: Record<string, any>;
+}
+
+interface TableCellData {
+  content: string;
+  imageUrl: string;
+  bgColor: string;
+  textColor: string;
+}
+
+interface TableBlockFormData {
+  id?: number;
+  tempId: string;
+  itemType: "table";
+  order?: number;
+  blockType?: string;
+  metadata?: Record<string, any>;
+  rows: number;
+  cols: number;
+  headerRow: boolean;
+  cells: Record<string, TableCellData>;
+  colWidths: string[];
+  rowHeights: string[];
+  borderColor: string;
+  rowBorderColors: string[];
 }
 
 interface CheckpointFormData {
@@ -303,9 +328,30 @@ function generateTempId(): string {
   return `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-// Maps a DB content block (with blockType + metadata bag) to the new flat ContentBlockFormData
-function mapDbBlockToFormData(b: any, tempIdPrefix: string): ContentBlockFormData {
+// Maps a DB content block (with blockType + metadata bag) to the new flat form data
+function mapDbBlockToFormData(b: any, tempIdPrefix: string): ContentBlockFormData | TableBlockFormData {
   const meta = b.metadata || {};
+
+  // Table blocks
+  if (b.blockType === "table" && meta.tableData) {
+    const td = meta.tableData;
+    return {
+      id: b.id,
+      tempId: `${tempIdPrefix}-${b.id}`,
+      itemType: "table",
+      order: b.order,
+      rows: td.rows || 2,
+      cols: td.cols || 2,
+      headerRow: td.headerRow ?? false,
+      cells: td.cells || {},
+      colWidths: td.colWidths || Array(td.cols || 2).fill("auto"),
+      rowHeights: td.rowHeights || Array(td.rows || 2).fill("auto"),
+      borderColor: td.borderColor || "#e5e7eb",
+      rowBorderColors: td.rowBorderColors || [],
+      blockType: b.blockType,
+      metadata: meta,
+    };
+  }
 
   // Determine arrangement from old blockType
   let arrangement: ContentBlockFormData["arrangement"] = "stacked";
@@ -316,7 +362,6 @@ function mapDbBlockToFormData(b: any, tempIdPrefix: string): ContentBlockFormDat
   // Determine media position from old reverseLayout / splitRatio
   let mediaPosition: ContentBlockFormData["mediaPosition"] = "left";
   if (meta.reverseLayout === false || !meta.reverseLayout) {
-    // In old system, reverseLayout=false means "Text Left" (image right)
     mediaPosition = "right";
   }
   if (meta.reverseLayout === true) {
@@ -325,12 +370,11 @@ function mapDbBlockToFormData(b: any, tempIdPrefix: string): ContentBlockFormDat
 
   // Map old imageWidth to mediaWidth
   let mediaWidth: ContentBlockFormData["mediaWidth"] = meta.imageWidth || "100%";
-  // Support old values that may not include 33%
   if (!(["25%", "33%", "50%", "75%", "100%"] as string[]).includes(mediaWidth)) {
     mediaWidth = "100%";
   }
 
-  // Map old width to blockWidth, and add support for 2/3
+  // Map old width to blockWidth
   let blockWidth: ContentBlockFormData["blockWidth"] = meta.width || "full";
   if (!(["1/3", "1/2", "2/3", "full"] as string[]).includes(blockWidth)) {
     blockWidth = "full";
@@ -349,42 +393,63 @@ function mapDbBlockToFormData(b: any, tempIdPrefix: string): ContentBlockFormDat
     blockWidth: blockWidth as ContentBlockFormData["blockWidth"],
     fontSize: meta.fontSize || "normal",
     columns: meta.columns || 1,
-    // Preserve for DB serialization
     blockType: b.blockType,
     metadata: meta,
   };
 }
 
 // Converts form data back to the DB-compatible format for saving
-function formDataToDbBlock(block: ContentBlockFormData) {
+function formDataToDbBlock(block: ContentBlockFormData | TableBlockFormData) {
+  // Table blocks
+  if (block.itemType === "table") {
+    const tb = block as TableBlockFormData;
+    return {
+      id: tb.id,
+      itemType: tb.itemType,
+      blockType: "table",
+      content: null,
+      imageUrl: null,
+      metadata: {
+        tableData: {
+          rows: tb.rows,
+          cols: tb.cols,
+          headerRow: tb.headerRow,
+          cells: tb.cells,
+          colWidths: tb.colWidths,
+          rowHeights: tb.rowHeights,
+          borderColor: tb.borderColor,
+          rowBorderColors: tb.rowBorderColors,
+        },
+      },
+    };
+  }
+
+  const cb = block as ContentBlockFormData;
   // Determine blockType from content
   let blockType = "text";
-  const hasImage = !!block.imageUrl;
-  const hasContent = !!block.content;
-  if (hasImage && hasContent && block.arrangement === "side-by-side") {
+  const hasImage = !!cb.imageUrl;
+  const hasContent = !!cb.content;
+  if (hasImage && hasContent && cb.arrangement === "side-by-side") {
     blockType = "split";
   } else if (hasImage && !hasContent) {
     blockType = "image";
   }
 
   return {
-    id: block.id,
-    itemType: block.itemType,
+    id: cb.id,
+    itemType: cb.itemType,
     blockType,
-    content: block.content,
-    imageUrl: block.imageUrl,
+    content: cb.content,
+    imageUrl: cb.imageUrl,
     metadata: {
-      // Layout
-      arrangement: block.arrangement,
-      mediaPosition: block.mediaPosition,
-      imageWidth: block.mediaWidth,
-      width: block.blockWidth,
-      // Text formatting  
-      fontSize: block.fontSize !== "normal" ? block.fontSize : undefined,
-      columns: block.columns !== 1 ? block.columns : undefined,
-      // Legacy compat for old split renderer
-      splitRatio: block.arrangement === "side-by-side" ? "50-50" : undefined,
-      reverseLayout: block.arrangement === "side-by-side" ? block.mediaPosition === "left" : undefined,
+      arrangement: cb.arrangement,
+      mediaPosition: cb.mediaPosition,
+      imageWidth: cb.mediaWidth,
+      width: cb.blockWidth,
+      fontSize: cb.fontSize !== "normal" ? cb.fontSize : undefined,
+      columns: cb.columns !== 1 ? cb.columns : undefined,
+      splitRatio: cb.arrangement === "side-by-side" ? "50-50" : undefined,
+      reverseLayout: cb.arrangement === "side-by-side" ? cb.mediaPosition === "left" : undefined,
     },
   };
 }
@@ -707,6 +772,416 @@ function SortableContentBlock({
 
 // CheckpointEditor moved to top of file
 
+// ─── Table Block Editor ────────────────────────────────────────────────────────
+function SortableTableBlock({
+  block,
+  stepIndex,
+  blockIndex,
+  onChange,
+  onRemove,
+}: {
+  block: TableBlockFormData;
+  stepIndex: number;
+  blockIndex: number;
+  onChange: (data: Partial<TableBlockFormData>) => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.tempId });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+  const { toast } = useToast();
+  const tableRef = useRef<HTMLTableElement>(null);
+
+  // ── Drag-to-resize state ──
+  const [resizingCol, setResizingCol] = useState<number | null>(null);
+  const [resizingRow, setResizingRow] = useState<number | null>(null);
+  const resizeStartRef = useRef<{ x: number; y: number; size: number }>({ x: 0, y: 0, size: 0 });
+
+  // Column resize handlers
+  const startColResize = (colIndex: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const table = tableRef.current;
+    if (!table) return;
+    const cols = table.querySelectorAll(`td:nth-child(${colIndex + 1}), th:nth-child(${colIndex + 1})`);
+    const firstCell = cols[0] as HTMLElement;
+    resizeStartRef.current = { x: e.clientX, y: 0, size: firstCell?.offsetWidth || 100 };
+    setResizingCol(colIndex);
+  };
+
+  const startRowResize = (rowIndex: number, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const table = tableRef.current;
+    if (!table) return;
+    const row = table.querySelectorAll("tr")[rowIndex + (block.headerRow ? 1 : 0)] as HTMLElement;
+    resizeStartRef.current = { x: 0, y: e.clientY, size: row?.offsetHeight || 50 };
+    setResizingRow(rowIndex);
+  };
+
+  useEffect(() => {
+    if (resizingCol === null && resizingRow === null) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (resizingCol !== null) {
+        const delta = e.clientX - resizeStartRef.current.x;
+        const newWidth = Math.max(60, resizeStartRef.current.size + delta);
+        const newColWidths = [...block.colWidths];
+        newColWidths[resizingCol] = `${newWidth}px`;
+        onChange({ colWidths: newColWidths });
+      }
+      if (resizingRow !== null) {
+        const delta = e.clientY - resizeStartRef.current.y;
+        const newHeight = Math.max(30, resizeStartRef.current.size + delta);
+        const newRowHeights = [...block.rowHeights];
+        newRowHeights[resizingRow] = `${newHeight}px`;
+        onChange({ rowHeights: newRowHeights });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setResizingCol(null);
+      setResizingRow(null);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [resizingCol, resizingRow, block.colWidths, block.rowHeights, onChange]);
+
+  // ── Cell helpers ──
+  const getCellData = (r: number, c: number): TableCellData => {
+    return block.cells[`${r}-${c}`] || { content: "", imageUrl: "", bgColor: "", textColor: "" };
+  };
+
+  const updateCell = (r: number, c: number, updates: Partial<TableCellData>) => {
+    const key = `${r}-${c}`;
+    const existing = getCellData(r, c);
+    onChange({
+      cells: { ...block.cells, [key]: { ...existing, ...updates } },
+    });
+  };
+
+  // Image upload for a specific cell
+  const handleCellImageUpload = async (r: number, c: number, file: File) => {
+    const formData = new FormData();
+    formData.append("image", file);
+    try {
+      const res = await fetch("/api/upload", { method: "POST", body: formData, credentials: "include" });
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      updateCell(r, c, { imageUrl: data.url });
+      toast({ title: "Success", description: "Image uploaded" });
+    } catch {
+      toast({ title: "Error", description: "Failed to upload image", variant: "destructive" });
+    }
+  };
+
+  // ── Row/Col management ──
+  const addRow = () => {
+    const newRows = block.rows + 1;
+    onChange({
+      rows: newRows,
+      rowHeights: [...block.rowHeights, "auto"],
+      rowBorderColors: [...block.rowBorderColors, ""],
+    });
+  };
+
+  const removeRow = (rowIdx: number) => {
+    if (block.rows <= 1) return;
+    const newCells = { ...block.cells };
+    // Remove cells in deleted row and shift cells below it up
+    for (let c = 0; c < block.cols; c++) {
+      delete newCells[`${rowIdx}-${c}`];
+    }
+    const shiftedCells: Record<string, TableCellData> = {};
+    for (const [key, val] of Object.entries(newCells)) {
+      const [r, c] = key.split("-").map(Number);
+      if (r > rowIdx) {
+        shiftedCells[`${r - 1}-${c}`] = val;
+      } else {
+        shiftedCells[key] = val;
+      }
+    }
+    const newRowHeights = block.rowHeights.filter((_, i) => i !== rowIdx);
+    const newRowBorderColors = block.rowBorderColors.filter((_, i) => i !== rowIdx);
+    onChange({ rows: block.rows - 1, cells: shiftedCells, rowHeights: newRowHeights, rowBorderColors: newRowBorderColors });
+  };
+
+  const addCol = () => {
+    const newCols = block.cols + 1;
+    onChange({
+      cols: newCols,
+      colWidths: [...block.colWidths, "auto"],
+    });
+  };
+
+  const removeCol = (colIdx: number) => {
+    if (block.cols <= 1) return;
+    const newCells: Record<string, TableCellData> = {};
+    for (const [key, val] of Object.entries(block.cells)) {
+      const [r, c] = key.split("-").map(Number);
+      if (c === colIdx) continue;
+      if (c > colIdx) {
+        newCells[`${r}-${c - 1}`] = val;
+      } else {
+        newCells[key] = val;
+      }
+    }
+    const newColWidths = block.colWidths.filter((_, i) => i !== colIdx);
+    onChange({ cols: block.cols - 1, cells: newCells, colWidths: newColWidths });
+  };
+
+  const updateRowBorderColor = (rowIdx: number, color: string) => {
+    const newColors = [...block.rowBorderColors];
+    while (newColors.length <= rowIdx) newColors.push("");
+    newColors[rowIdx] = color;
+    onChange({ rowBorderColors: newColors });
+  };
+
+  // ── Selected cell for editing (optional) ──
+  const [selectedCell, setSelectedCell] = useState<{ r: number; c: number } | null>(null);
+  const sel = selectedCell ? getCellData(selectedCell.r, selectedCell.c) : null;
+
+  return (
+    <div ref={setNodeRef} style={style} className={cn("group", isDragging && "z-50")}>
+      <Card className="border" data-testid={`table-block-${stepIndex}-${blockIndex}`}>
+        <CardContent className="pt-4 space-y-3">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                {...attributes}
+                {...listeners}
+                className="cursor-grab active:cursor-grabbing p-1 hover-elevate rounded"
+              >
+                <GripVertical className="h-4 w-4 text-muted-foreground" />
+              </button>
+              <Badge variant="outline" className="text-xs">
+                <Table2 className="h-3 w-3 mr-1" />
+                Table ({block.rows}×{block.cols})
+              </Badge>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={addRow}>
+                + Row
+              </Button>
+              <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={addCol}>
+                + Col
+              </Button>
+              <Separator orientation="vertical" className="h-4 mx-1" />
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground">Border:</Label>
+                <input
+                  type="color"
+                  value={block.borderColor || "#e5e7eb"}
+                  onChange={(e) => onChange({ borderColor: e.target.value })}
+                  className="w-6 h-6 rounded border cursor-pointer"
+                  title="Default border color"
+                />
+              </div>
+              <Separator orientation="vertical" className="h-4 mx-1" />
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onRemove}>
+                <Trash2 className="h-3 w-3 text-destructive" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Table Editor */}
+          <div className="overflow-x-auto border rounded-md">
+            <table
+              ref={tableRef}
+              className="module-table w-full"
+              style={{ borderColor: block.borderColor || "#e5e7eb" }}
+            >
+              <colgroup>
+                {Array.from({ length: block.cols }).map((_, c) => (
+                  <col key={c} style={{ width: block.colWidths[c] || "auto" }} />
+                ))}
+              </colgroup>
+              <tbody>
+                {Array.from({ length: block.rows }).map((_, r) => (
+                  <tr
+                    key={r}
+                    style={{
+                      borderBottom: `2px solid ${block.rowBorderColors[r] || block.borderColor || "#e5e7eb"}`,
+                      height: block.rowHeights[r] || "auto",
+                    }}
+                  >
+                    {Array.from({ length: block.cols }).map((_, c) => {
+                      const cellData = getCellData(r, c);
+                      const isSelected = selectedCell?.r === r && selectedCell?.c === c;
+                      return (
+                        <td
+                          key={c}
+                          className={cn(
+                            "relative p-2 align-top border-r last:border-r-0 cursor-pointer transition-all",
+                            isSelected && "ring-2 ring-primary ring-inset"
+                          )}
+                          style={{
+                            backgroundColor: cellData.bgColor || "transparent",
+                            color: cellData.textColor || "inherit",
+                            borderColor: block.borderColor || "#e5e7eb",
+                          }}
+                          onClick={() => setSelectedCell({ r, c })}
+                        >
+                          {/* Cell content */}
+                          {cellData.imageUrl && (
+                            <img
+                              src={cellData.imageUrl}
+                              alt=""
+                              className="max-w-full h-auto max-h-24 object-contain mb-1"
+                            />
+                          )}
+                          <div
+                            contentEditable
+                            suppressContentEditableWarning
+                            className="min-h-[1.5rem] text-sm outline-none focus:bg-muted/20 rounded px-1"
+                            dangerouslySetInnerHTML={{ __html: cellData.content || "" }}
+                            onBlur={(e) => updateCell(r, c, { content: e.currentTarget.innerHTML })}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+
+                          {/* Column resize handle (right edge of each cell, except last col) */}
+                          {c < block.cols - 1 && (
+                            <div
+                              className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/40 z-10"
+                              onMouseDown={(e) => startColResize(c, e)}
+                            />
+                          )}
+                        </td>
+                      );
+                    })}
+                    {/* Row controls: border color + remove */}
+                    <td className="p-1 border-0 w-8 align-middle">
+                      <div className="flex flex-col items-center gap-0.5">
+                        <input
+                          type="color"
+                          value={block.rowBorderColors[r] || block.borderColor || "#e5e7eb"}
+                          onChange={(e) => updateRowBorderColor(r, e.target.value)}
+                          className="w-4 h-4 rounded cursor-pointer border-0"
+                          title="Row border color"
+                        />
+                        {block.rows > 1 && (
+                          <button
+                            onClick={() => removeRow(r)}
+                            className="text-destructive/60 hover:text-destructive"
+                            title="Remove row"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {/* Row resize handles */}
+                {Array.from({ length: block.rows }).map((_, r) => (
+                  <tr key={`resize-${r}`} className="h-0" style={{ display: r < block.rows - 1 ? undefined : "none" }}>
+                    <td colSpan={block.cols + 1} className="p-0 border-0 relative">
+                      <div
+                        className="absolute w-full h-2 cursor-row-resize hover:bg-primary/20 -top-1 z-10"
+                        onMouseDown={(e) => startRowResize(r, e)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {/* Column remove buttons */}
+              <tfoot>
+                <tr>
+                  {Array.from({ length: block.cols }).map((_, c) => (
+                    <td key={c} className="border-0 p-0 text-center">
+                      {block.cols > 1 && (
+                        <button
+                          onClick={() => removeCol(c)}
+                          className="text-destructive/60 hover:text-destructive p-0.5"
+                          title="Remove column"
+                        >
+                          <Trash2 className="h-3 w-3 mx-auto" />
+                        </button>
+                      )}
+                    </td>
+                  ))}
+                  <td className="border-0" />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Selected cell panel */}
+          {selectedCell && sel && (
+            <div className="flex items-center gap-3 bg-muted/30 p-2 rounded-md flex-wrap">
+              <span className="text-xs font-medium text-muted-foreground">
+                Cell ({selectedCell.r + 1}, {selectedCell.c + 1})
+              </span>
+              <Separator orientation="vertical" className="h-4" />
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground">BG:</Label>
+                <input
+                  type="color"
+                  value={sel.bgColor || "#ffffff"}
+                  onChange={(e) => updateCell(selectedCell.r, selectedCell.c, { bgColor: e.target.value })}
+                  className="w-5 h-5 rounded cursor-pointer"
+                />
+                {sel.bgColor && (
+                  <button
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => updateCell(selectedCell.r, selectedCell.c, { bgColor: "" })}
+                  >✕</button>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground">Text:</Label>
+                <input
+                  type="color"
+                  value={sel.textColor || "#000000"}
+                  onChange={(e) => updateCell(selectedCell.r, selectedCell.c, { textColor: e.target.value })}
+                  className="w-5 h-5 rounded cursor-pointer"
+                />
+                {sel.textColor && (
+                  <button
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => updateCell(selectedCell.r, selectedCell.c, { textColor: "" })}
+                  >✕</button>
+                )}
+              </div>
+              <Separator orientation="vertical" className="h-4" />
+              <div className="flex items-center gap-1">
+                <Label className="text-xs text-muted-foreground">Image:</Label>
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (file) await handleCellImageUpload(selectedCell.r, selectedCell.c, file);
+                    }}
+                  />
+                  <Badge variant="outline" className="text-xs cursor-pointer hover:bg-muted">
+                    <Upload className="h-3 w-3 mr-1" />
+                    {sel.imageUrl ? "Replace" : "Upload"}
+                  </Badge>
+                </label>
+                {sel.imageUrl && (
+                  <button
+                    className="text-xs text-destructive hover:text-destructive/80"
+                    onClick={() => updateCell(selectedCell.r, selectedCell.c, { imageUrl: "" })}
+                  >Remove</button>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+
 // Preview components that match user-facing styling
 function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
   const basisClass = block.blockWidth === "1/3" ? "md:basis-[calc(33.333%-1.5rem)]" :
@@ -774,6 +1249,47 @@ function ContentBlockPreview({ block }: { block: ContentBlockFormData }) {
           dangerouslySetInnerHTML={{ __html: block.content }}
         />
       )}
+    </div>
+  );
+}
+
+// Table preview (used in admin preview tab)
+function TableBlockPreview({ block }: { block: TableBlockFormData }) {
+  return (
+    <div className="mb-8 basis-full" data-testid="table-block-preview">
+      <div className="overflow-x-auto">
+        <table className="module-table w-full" style={{ borderColor: block.borderColor || "#e5e7eb" }}>
+          <colgroup>
+            {Array.from({ length: block.cols }).map((_, c) => (
+              <col key={c} style={{ width: block.colWidths[c] || "auto" }} />
+            ))}
+          </colgroup>
+          <tbody>
+            {Array.from({ length: block.rows }).map((_, r) => {
+              const borderColor = block.rowBorderColors[r] || block.borderColor || "#e5e7eb";
+              return (
+                <tr key={r} style={{ borderBottom: `2px solid ${borderColor}`, height: block.rowHeights[r] || "auto" }}>
+                  {Array.from({ length: block.cols }).map((_, c) => {
+                    const cell = block.cells[`${r}-${c}`] || {};
+                    return (
+                      <td
+                        key={c}
+                        className="p-4 align-middle"
+                        style={{ backgroundColor: cell.bgColor || "transparent", color: cell.textColor || "inherit" }}
+                      >
+                        {cell.imageUrl && (
+                          <img src={cell.imageUrl} alt="" className="max-w-full h-auto max-h-24 object-contain mb-2" />
+                        )}
+                        {cell.content && <div dangerouslySetInnerHTML={{ __html: cell.content }} />}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -846,6 +1362,8 @@ function StepPreview({ step, index }: { step: StepFormData; index: number }) {
           {step.items.map((item) => (
             item.itemType === "content" ? (
               <ContentBlockPreview key={item.tempId} block={item as ContentBlockFormData} />
+            ) : item.itemType === "table" ? (
+              <TableBlockPreview key={item.tempId} block={item as TableBlockFormData} />
             ) : (
               <CheckpointPreview key={item.tempId} checkpoint={item as CheckpointFormData} />
             )
@@ -894,7 +1412,7 @@ function SortableStep({
     })
   );
 
-  const handleItemChange = (itemIndex: number, data: Partial<ContentBlockFormData | CheckpointFormData>) => {
+  const handleItemChange = (itemIndex: number, data: Partial<ContentBlockFormData | CheckpointFormData | TableBlockFormData>) => {
     const newItems = [...step.items];
     newItems[itemIndex] = { ...newItems[itemIndex], ...data } as any;
     onChange({ ...step, items: newItems });
@@ -941,6 +1459,27 @@ function SortableStep({
           correctOptionIndex: 0,
           explanation: "",
           isEvaluated: true,
+        },
+      ],
+    });
+  };
+
+  const handleAddTable = () => {
+    onChange({
+      ...step,
+      items: [
+        ...step.items,
+        {
+          tempId: generateTempId(),
+          itemType: "table" as const,
+          rows: 3,
+          cols: 2,
+          headerRow: false,
+          cells: {},
+          colWidths: ["auto", "auto"],
+          rowHeights: ["auto", "auto", "auto"],
+          borderColor: "#e5e7eb",
+          rowBorderColors: [],
         },
       ],
     });
@@ -1047,6 +1586,15 @@ function SortableStep({
                       <Plus className="h-4 w-4 mr-1" />
                       Add Question
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddTable}
+                      data-testid={`button-add-table-${index}`}
+                    >
+                      <Table2 className="h-4 w-4 mr-1" />
+                      Add Table
+                    </Button>
                   </div>
                 </div>
 
@@ -1067,6 +1615,17 @@ function SortableStep({
                               <SortableContentBlock
                                 key={item.tempId}
                                 block={item as ContentBlockFormData}
+                                stepIndex={index}
+                                blockIndex={itemIndex}
+                                onChange={(data) => handleItemChange(itemIndex, data)}
+                                onRemove={() => handleRemoveItem(itemIndex)}
+                              />
+                            );
+                          } else if (item.itemType === 'table') {
+                            return (
+                              <SortableTableBlock
+                                key={item.tempId}
+                                block={item as TableBlockFormData}
                                 stepIndex={index}
                                 blockIndex={itemIndex}
                                 onChange={(data) => handleItemChange(itemIndex, data)}
@@ -1156,7 +1715,7 @@ export default function ModuleBuilder() {
         existingSteps.map((s) => {
           // Convert legacy checkpoint or new checkpoints array
           // Unify contentBlocks and checkpoints into items array
-          let items: (ContentBlockFormData | CheckpointFormData)[] = [];
+          let items: (ContentBlockFormData | CheckpointFormData | TableBlockFormData)[] = [];
 
           if (s.contentBlocks) {
             items.push(...s.contentBlocks.map((b: any) => mapDbBlockToFormData(b, "existing-block")));
@@ -1249,7 +1808,8 @@ export default function ModuleBuilder() {
       const serializedSteps = stepsToSave.map(step => ({
         ...step,
         items: step.items.map(item =>
-          item.itemType === "content" ? formDataToDbBlock(item as ContentBlockFormData) : item
+          item.itemType === "content" ? formDataToDbBlock(item as ContentBlockFormData) :
+            item.itemType === "table" ? formDataToDbBlock(item as TableBlockFormData) : item
         ),
       }));
       return await apiRequest<StepWithDetails[]>("PUT", `/api/admin/modules/${id}/steps`, { steps: serializedSteps });
@@ -1260,7 +1820,7 @@ export default function ModuleBuilder() {
           data.map((s) => {
             // Convert legacy checkpoint or new checkpoints array
             // Unify contentBlocks and checkpoints into items array
-            let items: (ContentBlockFormData | CheckpointFormData)[] = [];
+            let items: (ContentBlockFormData | CheckpointFormData | TableBlockFormData)[] = [];
 
             if (s.contentBlocks) {
               items.push(...s.contentBlocks.map((b: any) => mapDbBlockToFormData(b, "existing-block")));

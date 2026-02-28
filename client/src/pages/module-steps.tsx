@@ -219,6 +219,48 @@ function StepNavItem({
 function StepBlockRenderer({ block }: { block: any }) { // Using any for now — block comes from DB with mixed old/new metadata
   const meta = block.metadata || {};
 
+  // ── Table blocks ──
+  if (block.blockType === "table" && meta.tableData) {
+    const td = meta.tableData;
+    return (
+      <div className="mb-8 basis-full" data-testid={`table-block-${block.id}`}>
+        <div className="overflow-x-auto">
+          <table className="module-table w-full" style={{ borderColor: td.borderColor || "#e5e7eb" }}>
+            <colgroup>
+              {Array.from({ length: td.cols || 0 }).map((_: any, c: number) => (
+                <col key={c} style={{ width: td.colWidths?.[c] || "auto" }} />
+              ))}
+            </colgroup>
+            <tbody>
+              {Array.from({ length: td.rows || 0 }).map((_: any, r: number) => {
+                const borderColor = td.rowBorderColors?.[r] || td.borderColor || "#e5e7eb";
+                return (
+                  <tr key={r} style={{ borderBottom: `2px solid ${borderColor}`, height: td.rowHeights?.[r] || "auto" }}>
+                    {Array.from({ length: td.cols || 0 }).map((_: any, c: number) => {
+                      const cell = td.cells?.[`${r}-${c}`] || {};
+                      return (
+                        <td
+                          key={c}
+                          className="p-4 align-middle"
+                          style={{ backgroundColor: cell.bgColor || "transparent", color: cell.textColor || "inherit" }}
+                        >
+                          {cell.imageUrl && (
+                            <img src={cell.imageUrl} alt="" className="max-w-full h-auto object-contain mb-2" />
+                          )}
+                          {cell.content && <div dangerouslySetInnerHTML={{ __html: cell.content }} />}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   // Determine arrangement: new system uses metadata.arrangement, old system uses blockType
   const arrangement = meta.arrangement || (block.blockType === "split" ? "side-by-side" : "stacked");
   const hasImage = !!block.imageUrl;

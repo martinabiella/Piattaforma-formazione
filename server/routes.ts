@@ -741,7 +741,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           for (let j = 0; j < stepData.items.length; j++) {
             const item = stepData.items[j];
             const order = j + 1;
-            if (item.itemType === 'content') {
+            if (item.itemType === 'content' || item.itemType === 'table') {
               contentBlocks.push({ ...item, order });
             } else if (item.itemType === 'checkpoint') {
               checkpoints.push({ ...item, order });
