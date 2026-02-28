@@ -1241,14 +1241,6 @@ function SortableTableBlock({
                               style={{ textAlign: cellData.textAlign || "left" }}
                               dangerouslySetInnerHTML={{ __html: cellData.content || "" }}
                               onBlur={(e) => updateCell(r, c, { content: e.currentTarget.innerHTML })}
-                              onMouseDown={(e) => {
-                                // Double click selects word via native behavior, but regular click selects cell
-                                e.stopPropagation();
-                                if (!isSelected) {
-                                  handleCellMouseDown(r, c);
-                                  setIsSelecting(false); // Single click focus, not drag
-                                }
-                              }}
                             />
 
                             {/* Column resize handle (right edge) */}
