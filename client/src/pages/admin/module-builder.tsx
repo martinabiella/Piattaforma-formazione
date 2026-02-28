@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import { AdminLayout } from "@/components/admin-layout";
@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -56,6 +57,12 @@ import {
   Layers,
   PanelLeftClose,
   Table2,
+  Bold,
+  Italic,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Minus,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -105,6 +112,9 @@ interface TableCellData {
   imageUrl: string;
   bgColor: string;
   textColor: string;
+  isBold?: boolean;
+  isItalic?: boolean;
+  textAlign?: "left" | "center" | "right";
 }
 
 interface TableBlockFormData {
@@ -773,6 +783,7 @@ function SortableContentBlock({
 // CheckpointEditor moved to top of file
 
 // ─── Table Block Editor ────────────────────────────────────────────────────────
+// ─── Table Block Editor ────────────────────────────────────────────────────────
 function SortableTableBlock({
   block,
   stepIndex,
@@ -796,7 +807,6 @@ function SortableTableBlock({
   const [resizingRow, setResizingRow] = useState<number | null>(null);
   const resizeStartRef = useRef<{ x: number; y: number; size: number }>({ x: 0, y: 0, size: 0 });
 
-  // Column resize handlers
   const startColResize = (colIndex: number, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -813,7 +823,8 @@ function SortableTableBlock({
     e.stopPropagation();
     const table = tableRef.current;
     if (!table) return;
-    const row = table.querySelectorAll("tr")[rowIndex + (block.headerRow ? 1 : 0)] as HTMLElement;
+    const rows = table.querySelectorAll("tbody > tr.table-data-row");
+    const row = rows[rowIndex] as HTMLElement;
     resizeStartRef.current = { x: 0, y: e.clientY, size: row?.offsetHeight || 50 };
     setResizingRow(rowIndex);
   };
@@ -856,6 +867,59 @@ function SortableTableBlock({
     return block.cells[`${r}-${c}`] || { content: "", imageUrl: "", bgColor: "", textColor: "" };
   };
 
+  // ── Multi-cell selection state ──
+  const [selectionStart, setSelectionStart] = useState<{ r: number; c: number } | null>(null);
+  const [selectionEnd, setSelectionEnd] = useState<{ r: number; c: number } | null>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+
+  const handleCellMouseDown = (r: number, c: number) => {
+    setIsSelecting(true);
+    setSelectionStart({ r, c });
+    setSelectionEnd({ r, c });
+  };
+
+  const handleCellMouseEnter = (r: number, c: number) => {
+    if (isSelecting) {
+      setSelectionEnd({ r, c });
+    }
+  };
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => setIsSelecting(false);
+    document.addEventListener("mouseup", handleGlobalMouseUp);
+    return () => document.removeEventListener("mouseup", handleGlobalMouseUp);
+  }, []);
+
+  const isCellSelected = (r: number, c: number) => {
+    if (!selectionStart || !selectionEnd) return false;
+    const minR = Math.min(selectionStart.r, selectionEnd.r);
+    const maxR = Math.max(selectionStart.r, selectionEnd.r);
+    const minC = Math.min(selectionStart.c, selectionEnd.c);
+    const maxC = Math.max(selectionStart.c, selectionEnd.c);
+    return r >= minR && r <= maxR && c >= minC && c <= maxC;
+  };
+
+  const getSelectedCells = () => {
+    const cells: { r: number; c: number }[] = [];
+    if (!selectionStart || !selectionEnd) return cells;
+    const minR = Math.min(selectionStart.r, selectionEnd.r);
+    const maxR = Math.max(selectionStart.r, selectionEnd.r);
+    const minC = Math.min(selectionStart.c, selectionEnd.c);
+    const maxC = Math.max(selectionStart.c, selectionEnd.c);
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        cells.push({ r, c });
+      }
+    }
+    return cells;
+  };
+
+  const hasSelection = selectionStart !== null && selectionEnd !== null;
+  const selectedCells = getSelectedCells();
+  // For single-cell states like current color / image
+  const primarySel = hasSelection ? getCellData(selectionStart!.r, selectionStart!.c) : null;
+
+  // Single cell update
   const updateCell = (r: number, c: number, updates: Partial<TableCellData>) => {
     const key = `${r}-${c}`;
     const existing = getCellData(r, c);
@@ -864,15 +928,29 @@ function SortableTableBlock({
     });
   };
 
-  // Image upload for a specific cell
-  const handleCellImageUpload = async (r: number, c: number, file: File) => {
+  // Multi cell update
+  const updateSelectedCells = (updates: Partial<TableCellData> | ((curr: TableCellData) => Partial<TableCellData>)) => {
+    if (selectedCells.length === 0) return;
+    const newCells = { ...block.cells };
+    selectedCells.forEach(({ r, c }) => {
+      const key = `${r}-${c}`;
+      const existing = getCellData(r, c);
+      const cellUpdates = typeof updates === "function" ? updates(existing) : updates;
+      newCells[key] = { ...existing, ...cellUpdates };
+    });
+    onChange({ cells: newCells });
+  };
+
+  // Image upload
+  const handleImageUpload = async (file: File) => {
+    if (!primarySel || !selectionStart) return;
     const formData = new FormData();
     formData.append("image", file);
     try {
       const res = await fetch("/api/upload", { method: "POST", body: formData, credentials: "include" });
       if (!res.ok) throw new Error("Upload failed");
       const data = await res.json();
-      updateCell(r, c, { imageUrl: data.url });
+      updateCell(selectionStart.r, selectionStart.c, { imageUrl: data.url });
       toast({ title: "Success", description: "Image uploaded" });
     } catch {
       toast({ title: "Error", description: "Failed to upload image", variant: "destructive" });
@@ -881,9 +959,8 @@ function SortableTableBlock({
 
   // ── Row/Col management ──
   const addRow = () => {
-    const newRows = block.rows + 1;
     onChange({
-      rows: newRows,
+      rows: block.rows + 1,
       rowHeights: [...block.rowHeights, "auto"],
       rowBorderColors: [...block.rowBorderColors, ""],
     });
@@ -892,7 +969,6 @@ function SortableTableBlock({
   const removeRow = (rowIdx: number) => {
     if (block.rows <= 1) return;
     const newCells = { ...block.cells };
-    // Remove cells in deleted row and shift cells below it up
     for (let c = 0; c < block.cols; c++) {
       delete newCells[`${rowIdx}-${c}`];
     }
@@ -911,9 +987,8 @@ function SortableTableBlock({
   };
 
   const addCol = () => {
-    const newCols = block.cols + 1;
     onChange({
-      cols: newCols,
+      cols: block.cols + 1,
       colWidths: [...block.colWidths, "auto"],
     });
   };
@@ -941,30 +1016,132 @@ function SortableTableBlock({
     onChange({ rowBorderColors: newColors });
   };
 
-  // ── Selected cell for editing (optional) ──
-  const [selectedCell, setSelectedCell] = useState<{ r: number; c: number } | null>(null);
-  const sel = selectedCell ? getCellData(selectedCell.r, selectedCell.c) : null;
-
   return (
     <div ref={setNodeRef} style={style} className={cn("group", isDragging && "z-50")}>
       <Card className="border" data-testid={`table-block-${stepIndex}-${blockIndex}`}>
         <CardContent className="pt-4 space-y-3">
-          {/* Header */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <button
-                {...attributes}
-                {...listeners}
-                className="cursor-grab active:cursor-grabbing p-1 hover-elevate rounded"
-              >
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
-              </button>
-              <Badge variant="outline" className="text-xs">
-                <Table2 className="h-3 w-3 mr-1" />
-                Table ({block.rows}×{block.cols})
-              </Badge>
+          {/* Top toolbar with table controls AND text formatting */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap bg-muted/30 p-2 rounded-md">
+              <div className="flex items-center gap-2">
+                <button
+                  {...attributes}
+                  {...listeners}
+                  className="cursor-grab active:cursor-grabbing p-1 hover-elevate rounded"
+                >
+                  <GripVertical className="h-4 w-4 text-muted-foreground" />
+                </button>
+                <Badge variant="outline" className="text-xs shrink-0">
+                  <Table2 className="h-3 w-3 mr-1" />
+                  Table ({block.rows}×{block.cols})
+                </Badge>
+              </div>
+
+              {/* Text formatting toolbar (visible when cells selected) */}
+              <div className={cn("flex items-center gap-1 transition-opacity", !hasSelection && "opacity-30 pointer-events-none")}>
+                {hasSelection && (
+                  <span className="text-xs font-medium text-muted-foreground mr-1">
+                    {selectedCells.length} {selectedCells.length === 1 ? 'cell' : 'cells'}
+                  </span>
+                )}
+                <Separator orientation="vertical" className="h-4 mx-1" />
+                <button
+                  className="p-1 rounded hover:bg-muted transition-colors"
+                  onClick={() => updateSelectedCells((curr) => ({ isBold: !curr.isBold }))}
+                  title="Bold"
+                >
+                  <Bold className="h-4 w-4" />
+                </button>
+                <button
+                  className="p-1 rounded hover:bg-muted transition-colors"
+                  onClick={() => updateSelectedCells((curr) => ({ isItalic: !curr.isItalic }))}
+                  title="Italic"
+                >
+                  <Italic className="h-4 w-4" />
+                </button>
+                <Separator orientation="vertical" className="h-3 mx-1" />
+                <button
+                  className={cn("p-1 rounded hover:bg-muted transition-colors", primarySel?.textAlign === "left" && "bg-muted")}
+                  onClick={() => updateSelectedCells({ textAlign: "left" })}
+                  title="Align left"
+                >
+                  <AlignLeft className="h-4 w-4" />
+                </button>
+                <button
+                  className={cn("p-1 rounded hover:bg-muted transition-colors", primarySel?.textAlign === "center" && "bg-muted")}
+                  onClick={() => updateSelectedCells({ textAlign: "center" })}
+                  title="Align center"
+                >
+                  <AlignCenter className="h-4 w-4" />
+                </button>
+                <button
+                  className={cn("p-1 rounded hover:bg-muted transition-colors", primarySel?.textAlign === "right" && "bg-muted")}
+                  onClick={() => updateSelectedCells({ textAlign: "right" })}
+                  title="Align right"
+                >
+                  <AlignRight className="h-4 w-4" />
+                </button>
+                <Separator orientation="vertical" className="h-4 mx-1" />
+                <div className="flex items-center gap-1">
+                  <Label className="text-xs text-muted-foreground">BG:</Label>
+                  <input
+                    type="color"
+                    value={primarySel?.bgColor || "#ffffff"}
+                    onChange={(e) => updateSelectedCells({ bgColor: e.target.value })}
+                    className="w-5 h-5 rounded cursor-pointer border-0"
+                  />
+                  {primarySel?.bgColor && (
+                    <button
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => updateSelectedCells({ bgColor: "" })}
+                    >✕</button>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 ml-1">
+                  <Label className="text-xs text-muted-foreground">Text:</Label>
+                  <input
+                    type="color"
+                    value={primarySel?.textColor || "#000000"}
+                    onChange={(e) => updateSelectedCells({ textColor: e.target.value })}
+                    className="w-5 h-5 rounded cursor-pointer border-0"
+                  />
+                  {primarySel?.textColor && (
+                    <button
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => updateSelectedCells({ textColor: "" })}
+                    >✕</button>
+                  )}
+                </div>
+                <Separator orientation="vertical" className="h-4 mx-1" />
+                <div className="flex items-center gap-1">
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) await handleImageUpload(file);
+                      }}
+                      disabled={selectedCells.length > 1}
+                    />
+                    <Badge variant="outline" className={cn("text-xs cursor-pointer hover:bg-muted", selectedCells.length > 1 && "opacity-50 cursor-not-allowed")}>
+                      <Upload className="h-3 w-3 mr-1" />
+                      {primarySel?.imageUrl ? "Replace" : "Image"}
+                    </Badge>
+                  </label>
+                  {primarySel?.imageUrl && selectedCells.length === 1 && (
+                    <button
+                      className="text-xs text-destructive hover:text-destructive/80"
+                      onClick={() => updateSelectedCells({ imageUrl: "" })}
+                    >✕</button>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-1">
+
+            {/* Layout controls */}
+            <div className="flex items-center justify-end gap-1 flex-wrap">
               <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={addRow}>
                 + Row
               </Button>
@@ -972,13 +1149,25 @@ function SortableTableBlock({
                 + Col
               </Button>
               <Separator orientation="vertical" className="h-4 mx-1" />
+              <div className="flex items-center gap-1.5">
+                <Switch
+                  id={`header-${block.tempId}`}
+                  checked={block.headerRow}
+                  onCheckedChange={(checked) => onChange({ headerRow: checked })}
+                  className="scale-75"
+                />
+                <Label htmlFor={`header-${block.tempId}`} className="text-xs text-muted-foreground cursor-pointer">
+                  Header
+                </Label>
+              </div>
+              <Separator orientation="vertical" className="h-4 mx-1" />
               <div className="flex items-center gap-1">
                 <Label className="text-xs text-muted-foreground">Border:</Label>
                 <input
                   type="color"
                   value={block.borderColor || "#e5e7eb"}
                   onChange={(e) => onChange({ borderColor: e.target.value })}
-                  className="w-6 h-6 rounded border cursor-pointer"
+                  className="w-5 h-5 rounded cursor-pointer border-0"
                   title="Default border color"
                 />
               </div>
@@ -990,7 +1179,7 @@ function SortableTableBlock({
           </div>
 
           {/* Table Editor */}
-          <div className="overflow-x-auto border rounded-md">
+          <div className="overflow-x-auto border rounded-md table-editor-wrapper select-none">
             <table
               ref={tableRef}
               className="module-table w-full"
@@ -1002,98 +1191,120 @@ function SortableTableBlock({
                 ))}
               </colgroup>
               <tbody>
-                {Array.from({ length: block.rows }).map((_, r) => (
-                  <tr
-                    key={r}
-                    style={{
-                      borderBottom: `2px solid ${block.rowBorderColors[r] || block.borderColor || "#e5e7eb"}`,
-                      height: block.rowHeights[r] || "auto",
-                    }}
-                  >
-                    {Array.from({ length: block.cols }).map((_, c) => {
-                      const cellData = getCellData(r, c);
-                      const isSelected = selectedCell?.r === r && selectedCell?.c === c;
-                      return (
-                        <td
-                          key={c}
-                          className={cn(
-                            "relative p-2 align-top border-r last:border-r-0 cursor-pointer transition-all",
-                            isSelected && "ring-2 ring-primary ring-inset"
-                          )}
-                          style={{
-                            backgroundColor: cellData.bgColor || "transparent",
-                            color: cellData.textColor || "inherit",
-                            borderColor: block.borderColor || "#e5e7eb",
-                          }}
-                          onClick={() => setSelectedCell({ r, c })}
-                        >
-                          {/* Cell content */}
-                          {cellData.imageUrl && (
-                            <img
-                              src={cellData.imageUrl}
-                              alt=""
-                              className="max-w-full h-auto max-h-24 object-contain mb-1"
-                            />
-                          )}
-                          <div
-                            contentEditable
-                            suppressContentEditableWarning
-                            className="min-h-[1.5rem] text-sm outline-none focus:bg-muted/20 rounded px-1"
-                            dangerouslySetInnerHTML={{ __html: cellData.content || "" }}
-                            onBlur={(e) => updateCell(r, c, { content: e.currentTarget.innerHTML })}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-
-                          {/* Column resize handle (right edge of each cell, except last col) */}
-                          {c < block.cols - 1 && (
-                            <div
-                              className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-primary/40 z-10"
-                              onMouseDown={(e) => startColResize(c, e)}
-                            />
-                          )}
-                        </td>
-                      );
-                    })}
-                    {/* Row controls: border color + remove */}
-                    <td className="p-1 border-0 w-8 align-middle">
-                      <div className="flex flex-col items-center gap-0.5">
-                        <input
-                          type="color"
-                          value={block.rowBorderColors[r] || block.borderColor || "#e5e7eb"}
-                          onChange={(e) => updateRowBorderColor(r, e.target.value)}
-                          className="w-4 h-4 rounded cursor-pointer border-0"
-                          title="Row border color"
-                        />
-                        {block.rows > 1 && (
-                          <button
-                            onClick={() => removeRow(r)}
-                            className="text-destructive/60 hover:text-destructive"
-                            title="Remove row"
+                {Array.from({ length: block.rows }).map((_, r) => {
+                  const isHeader = block.headerRow && r === 0;
+                  return (
+                    <tr
+                      key={r}
+                      className="table-data-row relative"
+                      style={{
+                        borderBottom: `2px solid ${block.rowBorderColors[r] || block.borderColor || "#e5e7eb"}`,
+                        height: block.rowHeights[r] || "auto",
+                      }}
+                    >
+                      {Array.from({ length: block.cols }).map((_, c) => {
+                        const cellData = getCellData(r, c);
+                        const isSelected = isCellSelected(r, c);
+                        return (
+                          <td
+                            key={c}
+                            className={cn(
+                              "relative p-2 align-top transition-all",
+                              isSelected && "ring-2 ring-primary ring-inset bg-primary/5",
+                              isHeader && "bg-muted/40"
+                            )}
+                            style={{
+                              backgroundColor: cellData.bgColor || (isHeader ? undefined : "transparent"),
+                              color: cellData.textColor || "inherit",
+                              borderRight: c < block.cols - 1 ? `2px solid ${block.borderColor || "#e5e7eb"}` : "none",
+                            }}
+                            onMouseDown={() => handleCellMouseDown(r, c)}
+                            onMouseEnter={() => handleCellMouseEnter(r, c)}
                           >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {/* Row resize handles */}
-                {Array.from({ length: block.rows }).map((_, r) => (
-                  <tr key={`resize-${r}`} className="h-0" style={{ display: r < block.rows - 1 ? undefined : "none" }}>
-                    <td colSpan={block.cols + 1} className="p-0 border-0 relative">
-                      <div
-                        className="absolute w-full h-2 cursor-row-resize hover:bg-primary/20 -top-1 z-10"
-                        onMouseDown={(e) => startRowResize(r, e)}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                            {/* Cell content */}
+                            {cellData.imageUrl && (
+                              <img
+                                src={cellData.imageUrl}
+                                alt=""
+                                className="max-w-full h-auto max-h-24 object-contain mb-1 pointer-events-none"
+                              />
+                            )}
+                            <div
+                              contentEditable
+                              suppressContentEditableWarning
+                              className={cn(
+                                "min-h-[1.5rem] text-sm outline-none focus:bg-background/80 rounded px-1 cursor-text",
+                                cellData.isBold && "font-bold",
+                                cellData.isItalic && "italic",
+                                isHeader && !cellData.isBold && "font-bold"
+                              )}
+                              style={{ textAlign: cellData.textAlign || "left" }}
+                              dangerouslySetInnerHTML={{ __html: cellData.content || "" }}
+                              onBlur={(e) => updateCell(r, c, { content: e.currentTarget.innerHTML })}
+                              onMouseDown={(e) => {
+                                // Double click selects word via native behavior, but regular click selects cell
+                                e.stopPropagation();
+                                if (!isSelected) {
+                                  handleCellMouseDown(r, c);
+                                  setIsSelecting(false); // Single click focus, not drag
+                                }
+                              }}
+                            />
+
+                            {/* Column resize handle (right edge) */}
+                            {c < block.cols - 1 && (
+                              <div
+                                className={cn(
+                                  "table-col-resize-handle",
+                                  resizingCol === c && "active"
+                                )}
+                                onMouseDown={(e) => startColResize(c, e)}
+                              />
+                            )}
+
+                            {/* Row resize handle (bottom edge) */}
+                            {r < block.rows - 1 && (
+                              <div
+                                className={cn(
+                                  "table-row-resize-handle",
+                                  resizingRow === r && "active"
+                                )}
+                                onMouseDown={(e) => startRowResize(r, e)}
+                              />
+                            )}
+                          </td>
+                        );
+                      })}
+                      {/* Row controls: border color + remove */}
+                      <td className="p-1 border-0 w-8 align-middle bg-background z-10">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <input
+                            type="color"
+                            value={block.rowBorderColors[r] || block.borderColor || "#e5e7eb"}
+                            onChange={(e) => updateRowBorderColor(r, e.target.value)}
+                            className="w-4 h-4 rounded cursor-pointer border-0"
+                            title="Row border color"
+                          />
+                          {block.rows > 1 && (
+                            <button
+                              onClick={() => removeRow(r)}
+                              className="text-destructive/60 hover:text-destructive"
+                              title="Remove row"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               {/* Column remove buttons */}
               <tfoot>
                 <tr>
                   {Array.from({ length: block.cols }).map((_, c) => (
-                    <td key={c} className="border-0 p-0 text-center">
+                    <td key={c} className="border-0 p-0 text-center bg-background">
                       {block.cols > 1 && (
                         <button
                           onClick={() => removeCol(c)}
@@ -1110,76 +1321,13 @@ function SortableTableBlock({
               </tfoot>
             </table>
           </div>
-
-          {/* Selected cell panel */}
-          {selectedCell && sel && (
-            <div className="flex items-center gap-3 bg-muted/30 p-2 rounded-md flex-wrap">
-              <span className="text-xs font-medium text-muted-foreground">
-                Cell ({selectedCell.r + 1}, {selectedCell.c + 1})
-              </span>
-              <Separator orientation="vertical" className="h-4" />
-              <div className="flex items-center gap-1">
-                <Label className="text-xs text-muted-foreground">BG:</Label>
-                <input
-                  type="color"
-                  value={sel.bgColor || "#ffffff"}
-                  onChange={(e) => updateCell(selectedCell.r, selectedCell.c, { bgColor: e.target.value })}
-                  className="w-5 h-5 rounded cursor-pointer"
-                />
-                {sel.bgColor && (
-                  <button
-                    className="text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => updateCell(selectedCell.r, selectedCell.c, { bgColor: "" })}
-                  >✕</button>
-                )}
-              </div>
-              <div className="flex items-center gap-1">
-                <Label className="text-xs text-muted-foreground">Text:</Label>
-                <input
-                  type="color"
-                  value={sel.textColor || "#000000"}
-                  onChange={(e) => updateCell(selectedCell.r, selectedCell.c, { textColor: e.target.value })}
-                  className="w-5 h-5 rounded cursor-pointer"
-                />
-                {sel.textColor && (
-                  <button
-                    className="text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => updateCell(selectedCell.r, selectedCell.c, { textColor: "" })}
-                  >✕</button>
-                )}
-              </div>
-              <Separator orientation="vertical" className="h-4" />
-              <div className="flex items-center gap-1">
-                <Label className="text-xs text-muted-foreground">Image:</Label>
-                <label className="cursor-pointer">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (file) await handleCellImageUpload(selectedCell.r, selectedCell.c, file);
-                    }}
-                  />
-                  <Badge variant="outline" className="text-xs cursor-pointer hover:bg-muted">
-                    <Upload className="h-3 w-3 mr-1" />
-                    {sel.imageUrl ? "Replace" : "Upload"}
-                  </Badge>
-                </label>
-                {sel.imageUrl && (
-                  <button
-                    className="text-xs text-destructive hover:text-destructive/80"
-                    onClick={() => updateCell(selectedCell.r, selectedCell.c, { imageUrl: "" })}
-                  >Remove</button>
-                )}
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>
   );
 }
+
+
 
 
 // Preview components that match user-facing styling
@@ -1271,11 +1419,23 @@ function TableBlockPreview({ block }: { block: TableBlockFormData }) {
                 <tr key={r} style={{ borderBottom: `2px solid ${borderColor}`, height: block.rowHeights[r] || "auto" }}>
                   {Array.from({ length: block.cols }).map((_, c) => {
                     const cell = block.cells[`${r}-${c}`] || {};
+                    const isHeader = block.headerRow && r === 0;
                     return (
                       <td
                         key={c}
-                        className="p-4 align-middle"
-                        style={{ backgroundColor: cell.bgColor || "transparent", color: cell.textColor || "inherit" }}
+                        className={cn(
+                          "p-4 align-middle",
+                          isHeader && "bg-muted/40",
+                          cell.isBold && "font-bold",
+                          cell.isItalic && "italic",
+                          isHeader && !cell.isBold && "font-bold"
+                        )}
+                        style={{
+                          backgroundColor: cell.bgColor || (isHeader ? undefined : "transparent"),
+                          color: cell.textColor || "inherit",
+                          borderRight: c < block.cols - 1 ? `2px solid ${block.borderColor || "#e5e7eb"}` : "none",
+                          textAlign: (cell.textAlign as any) || "left",
+                        }}
                       >
                         {cell.imageUrl && (
                           <img src={cell.imageUrl} alt="" className="max-w-full h-auto max-h-24 object-contain mb-2" />
@@ -1464,7 +1624,14 @@ function SortableStep({
     });
   };
 
-  const handleAddTable = () => {
+  // Table creation dialog state
+  const [showTableDialog, setShowTableDialog] = useState(false);
+  const [newTableRows, setNewTableRows] = useState(3);
+  const [newTableCols, setNewTableCols] = useState(2);
+
+  const handleCreateTable = () => {
+    const rows = Math.max(1, Math.min(20, newTableRows));
+    const cols = Math.max(1, Math.min(10, newTableCols));
     onChange({
       ...step,
       items: [
@@ -1472,17 +1639,20 @@ function SortableStep({
         {
           tempId: generateTempId(),
           itemType: "table" as const,
-          rows: 3,
-          cols: 2,
+          rows,
+          cols,
           headerRow: false,
           cells: {},
-          colWidths: ["auto", "auto"],
-          rowHeights: ["auto", "auto", "auto"],
+          colWidths: Array(cols).fill("auto"),
+          rowHeights: Array(rows).fill("auto"),
           borderColor: "#e5e7eb",
           rowBorderColors: [],
         },
       ],
     });
+    setShowTableDialog(false);
+    setNewTableRows(3);
+    setNewTableCols(2);
   };
 
   const handleItemDragEnd = (event: DragEndEvent) => {
@@ -1589,7 +1759,7 @@ function SortableStep({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleAddTable}
+                      onClick={() => setShowTableDialog(true)}
                       data-testid={`button-add-table-${index}`}
                     >
                       <Table2 className="h-4 w-4 mr-1" />
@@ -1597,6 +1767,48 @@ function SortableStep({
                     </Button>
                   </div>
                 </div>
+
+                {/* Table dimension picker dialog */}
+                <Dialog open={showTableDialog} onOpenChange={setShowTableDialog}>
+                  <DialogContent className="max-w-sm">
+                    <DialogHeader>
+                      <DialogTitle>Create Table</DialogTitle>
+                      <DialogDescription>
+                        Choose the number of rows and columns for your table.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid grid-cols-2 gap-4 py-4">
+                      <div className="space-y-2">
+                        <Label>Rows</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={newTableRows}
+                          onChange={(e) => setNewTableRows(Number(e.target.value) || 1)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Columns</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={10}
+                          value={newTableCols}
+                          onChange={(e) => setNewTableCols(Number(e.target.value) || 1)}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Table2 className="h-4 w-4" />
+                      Preview: {newTableRows} × {newTableCols} table
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowTableDialog(false)}>Cancel</Button>
+                      <Button onClick={handleCreateTable}>Create Table</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
 
                 {step.items.length > 0 ? (
                   <DndContext

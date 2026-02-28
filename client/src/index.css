@@ -352,7 +352,7 @@
 
   /* ─── Module table blocks ─── */
   .module-table {
-    border-collapse: collapse;
+    border-spacing: 0;
     width: 100%;
     table-layout: fixed;
   }
@@ -376,6 +376,50 @@
 
   .module-table tr:last-child {
     border-bottom: none;
+  }
+
+  /* ─── Table editor: visible resize handles ─── */
+
+  /* Column resize handle — dotted line on the right edge of each cell */
+  .table-col-resize-handle {
+    position: absolute;
+    top: 0;
+    right: -2px;
+    width: 5px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 10;
+    border-right: 2px dotted transparent;
+    transition: border-color 0.15s ease;
+  }
+
+  .table-col-resize-handle:hover {
+    border-right-color: hsl(var(--primary) / 0.5);
+  }
+
+  .table-col-resize-handle.active {
+    border-right: 2px solid hsl(var(--primary));
+  }
+
+  /* Row resize handle — bottom edge of each cell, mirrors column handle pattern */
+  .table-row-resize-handle {
+    position: absolute;
+    left: 0;
+    bottom: -2px;
+    width: 100%;
+    height: 5px;
+    cursor: row-resize;
+    z-index: 10;
+    border-bottom: 2px dotted transparent;
+    transition: border-color 0.15s ease;
+  }
+
+  .table-row-resize-handle:hover {
+    border-bottom-color: hsl(var(--primary) / 0.5);
+  }
+
+  .table-row-resize-handle.active {
+    border-bottom: 2px solid hsl(var(--primary));
   }
 
   /* Responsive: stack columns on very small screens */

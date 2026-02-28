@@ -240,6 +240,9 @@ export const stepContentBlocks = pgTable("step_content_blocks", {
           imageUrl?: string;
           bgColor?: string;
           textColor?: string;
+          isBold?: boolean;
+          isItalic?: boolean;
+          textAlign?: "left" | "center" | "right";
         };
       };
       colWidths?: string[];

@@ -234,6 +234,7 @@ function StepBlockRenderer({ block }: { block: any }) { // Using any for now —
             <tbody>
               {Array.from({ length: td.rows || 0 }).map((_: any, r: number) => {
                 const borderColor = td.rowBorderColors?.[r] || td.borderColor || "#e5e7eb";
+                const isHeader = td.headerRow && r === 0;
                 return (
                   <tr key={r} style={{ borderBottom: `2px solid ${borderColor}`, height: td.rowHeights?.[r] || "auto" }}>
                     {Array.from({ length: td.cols || 0 }).map((_: any, c: number) => {
@@ -241,8 +242,19 @@ function StepBlockRenderer({ block }: { block: any }) { // Using any for now —
                       return (
                         <td
                           key={c}
-                          className="p-4 align-middle"
-                          style={{ backgroundColor: cell.bgColor || "transparent", color: cell.textColor || "inherit" }}
+                          className={cn(
+                            "p-4 align-middle",
+                            isHeader && "bg-muted/40",
+                            cell.isBold && "font-bold",
+                            cell.isItalic && "italic",
+                            isHeader && !cell.isBold && "font-bold"
+                          )}
+                          style={{
+                            backgroundColor: cell.bgColor || (isHeader ? undefined : "transparent"),
+                            color: cell.textColor || "inherit",
+                            borderRight: c < (td.cols || 0) - 1 ? `2px solid ${td.borderColor || "#e5e7eb"}` : "none",
+                            textAlign: cell.textAlign || "left",
+                          }}
                         >
                           {cell.imageUrl && (
                             <img src={cell.imageUrl} alt="" className="max-w-full h-auto object-contain mb-2" />
